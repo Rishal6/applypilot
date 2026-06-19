@@ -1,5 +1,11 @@
 const PROFILE_KEY = "applypilot.career.profile";
 const MESSAGE_KEY = "applypilot.career.messages";
+const startupQuery = new URLSearchParams(window.location.search);
+
+if (startupQuery.get("fresh") === "1" || startupQuery.get("reset") === "1") {
+  resetLocalCareerStorage();
+  removeStartupResetQuery();
+}
 
 const state = {
   data: null,
@@ -97,8 +103,17 @@ async function loadDashboard() {
     }
   }
   if (window.location.protocol === "file:" && !state.connection.endpoint) {
+    state.data = emptyDashboardData();
+    state.jobs = [];
     renderContext();
     elements.syncState.innerHTML = `<span class="connection-dot" aria-hidden="true"></span>Local chat mode`;
+    return;
+  }
+  if (!state.connection.endpoint || !state.connection.token) {
+    state.data = emptyDashboardData();
+    state.jobs = [];
+    renderContext();
+    elements.syncState.innerHTML = `<span class="connection-dot" aria-hidden="true"></span>Private local mode`;
     return;
   }
   try {
@@ -741,6 +756,35 @@ function saveProfile() {
   if (state.desktop) queueProfileSave(false);
 }
 
+function resetCandidateProfile(options = {}) {
+  const { confirmReset = true, showMessage = true } = options;
+  if (
+    confirmReset &&
+    (profileCompletion() > 0 || state.messages.length > 1 || state.connection.endpoint || state.connection.token) &&
+    !window.confirm("Start a fresh candidate profile in this browser? This clears the saved profile, chat, and SaaS connection for this browser.")
+  ) {
+    return;
+  }
+
+  resetLocalCareerStorage();
+  state.profile = defaultProfile();
+  state.messages = [];
+  state.onboardingStep = "";
+  state.connection = { endpoint: "", token: "" };
+  state.data = emptyDashboardData();
+  state.jobs = [];
+  setComposerPlaceholder("Tell me what kind of work you want, or what you’ve done so far…");
+  renderProfile();
+  renderContext();
+  addAssistantMessage(welcomeMessage());
+  if (state.desktop) {
+    queueProfileSave(false).then(loadDashboard).catch(() => undefined);
+  }
+  if (showMessage) {
+    showToast("Started a fresh person profile");
+  }
+}
+
 function queueProfileSave(rescore) {
   const profile = { ...state.profile, skills: [...(state.profile.skills || [])] };
   state.profileSave = state.profileSave
@@ -990,7 +1034,7 @@ function fetchDashboard() {
       },
     });
   }
-  return fetch("./data/dashboard.json", { cache: "no-store" });
+  throw new Error("Connect a license or device token to load SaaS dashboard data.");
 }
 
 async function initializeApplication() {
@@ -1006,6 +1050,67 @@ function loadConnection() {
   return {
     endpoint: safeStorageGet("local", "applypilot.api.endpoint") || "",
     token: safeStorageGet("local", "applypilot.api.token") || "",
+  };
+}
+
+function resetLocalCareerStorage() {
+  safeStorageRemove("local", PROFILE_KEY);
+  safeStorageRemove("session", MESSAGE_KEY);
+  safeStorageRemove("local", "applypilot.api.endpoint");
+  safeStorageRemove("local", "applypilot.api.token");
+}
+
+function removeStartupResetQuery() {
+  const cleanQuery = new URLSearchParams(window.location.search);
+  cleanQuery.delete("fresh");
+  cleanQuery.delete("reset");
+  const query = cleanQuery.toString();
+  const cleanUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+  window.history.replaceState({}, document.title, cleanUrl);
+}
+
+function emptyDashboardData() {
+  return {
+    generated_at: "",
+    policy: {
+      mode: "review-only",
+      max_applications_per_day: 0,
+      min_score_to_submit: 70,
+      require_easy_apply: true,
+      require_explicit_opt_in: true,
+      can_auto_submit: false,
+      should_stop_before_submit: true,
+    },
+    summary: {
+      jobs: 0,
+      evaluations: 0,
+      shortlisted: 0,
+      easy_apply_jobs: 0,
+      application_records: 0,
+      completed_jobs: 0,
+      applied_today: 0,
+      native_linkedin_applied: 0,
+      native_naukri_applied: 0,
+      legacy_linkedin_applied: 0,
+      legacy_naukri_applied: 0,
+      imported_history_total: 0,
+      profile_applied_total: 0,
+      leads: 0,
+      lead_emails: 0,
+    },
+    sources: [],
+    runs: [],
+    series: [],
+    jobs: [],
+    saas: {
+      plan: "free_cli",
+      ai_mode: "byok_local",
+    },
+    desktop: {
+      connected: false,
+      running: false,
+      logs: [],
+    },
   };
 }
 
@@ -1035,7 +1140,7 @@ function openConnectModal() {
   elements.connectTitle.textContent = state.desktop ? "Activate this desktop" : "Connect ApplyPilot data";
   elements.connectTokenLabel.textContent = state.desktop ? "License key" : "License or device token";
   elements.connectSubmit.textContent = state.desktop ? "Activate" : "Connect";
-  elements.clearConnection.textContent = state.desktop ? "Cancel" : "Use bundled data";
+  elements.clearConnection.textContent = state.desktop ? "Cancel" : "Use private local mode";
   elements.connectModal.hidden = false;
   elements.apiEndpoint.focus();
 }
@@ -1149,11 +1254,7 @@ document.addEventListener("click", (event) => {
 });
 
 elements.newConversation.addEventListener("click", () => {
-  state.messages = [];
-  state.onboardingStep = "";
-  persistMessages();
-  setComposerPlaceholder("Tell me what kind of work you want, or what you’ve done so far…");
-  addAssistantMessage(welcomeMessage());
+  resetCandidateProfile();
 });
 
 elements.refreshButton.addEventListener("click", loadDashboard);
@@ -1181,7 +1282,7 @@ elements.clearConnection.addEventListener("click", () => {
   saveConnection("", "");
   closeConnectModal();
   loadDashboard();
-  showToast("Using bundled dashboard data");
+  showToast("Using private local mode");
 });
 
 function requireDesktopActivation() {
