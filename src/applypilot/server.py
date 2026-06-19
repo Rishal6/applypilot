@@ -134,6 +134,7 @@ def create_app(db_path: str | Path | None = None, web_dir: str | Path | None = N
     async def create_razorpay_standard_order(request: Request) -> dict[str, Any]:
         body = await request.json()
         try:
+            billing.require_fulfillment_secret()
             plan = str(body.get("plan") or "pro_byok")
             seats = int(body.get("seats") or 1)
             ai_mode = str(body.get("ai_mode") or DEFAULT_AI_MODE.get(plan, "byok_local"))
@@ -163,6 +164,8 @@ def create_app(db_path: str | Path | None = None, web_dir: str | Path | None = N
             }
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except (RazorpayConfigurationError, RazorpayAuthenticationError) as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         except RazorpayApiError as exc:

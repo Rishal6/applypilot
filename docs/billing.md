@@ -1,8 +1,25 @@
 # Billing
 
-ApplyPilot supports Stripe and Razorpay subscription checkout.
+ApplyPilot supports Razorpay Standard Checkout for the current hosted checkout flow, plus the earlier Stripe/Razorpay subscription webhook spine for future recurring billing.
 
-## Customer Flow
+## Current Razorpay Standard Checkout flow
+
+```text
+customer opens /checkout.html
+-> backend creates billing checkout row
+-> backend creates Razorpay order
+-> Razorpay Checkout modal collects payment
+-> frontend sends payment id/order id/signature to backend
+-> backend verifies HMAC signature
+-> customer + license provisioned
+-> encrypted license stored
+-> license key returned once to the checkout page
+-> desktop activates with license
+```
+
+Important safety rule: `APPLYPILOT_FULFILLMENT_SECRET` must be configured before `/api/create-order` creates a Razorpay order. This prevents collecting payment when the server cannot issue a license.
+
+## Subscription webhook flow
 
 ```text
 checkout created
@@ -60,6 +77,8 @@ APPLYPILOT_RAZORPAY_PLAN_PRO_MANAGED=plan_...
 APPLYPILOT_RAZORPAY_PLAN_TEAM=plan_...
 ```
 
+For Standard Checkout, only `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `APPLYPILOT_FULFILLMENT_SECRET` are required. `RAZORPAY_WEBHOOK_SECRET` and plan IDs are for subscription webhooks.
+
 Webhook URL:
 
 ```text
@@ -88,3 +107,5 @@ PYTHONPATH=src python3 -m applypilot --workspace . serve
 ```
 
 The automated tests generate correctly signed synthetic Stripe and Razorpay events without making a real payment.
+
+For Razorpay test mode, avoid scanning UPI QR codes with a real banking app. Use Razorpay test card or netbanking flows, then confirm the checkout page returns a desktop license key.

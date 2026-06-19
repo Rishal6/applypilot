@@ -108,6 +108,7 @@ async function startRazorpayStandardCheckout() {
         email: checkoutElements.email.value,
         name: checkoutElements.name.value,
         company: checkoutElements.company.value,
+        phone: checkoutElements.phone.value,
         seats: Number(checkoutElements.seats.value || 1),
         plan: checkoutState.plan,
         ai_mode: checkoutState.aiMode,
@@ -326,6 +327,7 @@ function hideLicenseResult() {
 }
 
 const query = new URLSearchParams(window.location.search);
+applyInitialCheckoutQuery(query);
 if (query.get("paid") === "1") {
   claimLicense();
 }
@@ -338,4 +340,29 @@ renderProviderState();
 function renderProviderState() {
   checkoutElements.phoneField.hidden = checkoutState.provider !== "razorpay";
   checkoutElements.submit.textContent = `Continue to ${formatLabel(checkoutState.provider)}`;
+}
+
+function applyInitialCheckoutQuery(queryParams) {
+  const requestedPlan = queryParams.get("plan");
+  if (requestedPlan) {
+    checkoutElements.planGrid.querySelectorAll(".plan-option").forEach((button) => {
+      if (button.dataset.plan === requestedPlan) {
+        checkoutElements.planGrid.querySelectorAll(".plan-option").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        checkoutState.plan = button.dataset.plan;
+        checkoutState.aiMode = button.dataset.aiMode;
+      }
+    });
+  }
+
+  const requestedProvider = queryParams.get("provider");
+  if (requestedProvider) {
+    document.querySelectorAll("[data-provider]").forEach((button) => {
+      if (button.dataset.provider === requestedProvider) {
+        document.querySelectorAll("[data-provider]").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        checkoutState.provider = button.dataset.provider;
+      }
+    });
+  }
 }

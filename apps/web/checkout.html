@@ -75,11 +75,13 @@
               </label>
               <label class="phone-field">
                 <span>Phone</span>
-                <input id="checkoutPhone" type="tel" autocomplete="tel" />
+                <input id="checkoutPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="9123456789" />
+                <small class="field-note">Razorpay test mode tip: use a test/mobile number and avoid scanning UPI QR with a real banking app.</small>
               </label>
             </div>
             <button class="checkout-submit" id="checkoutSubmit" type="submit">Continue to Razorpay</button>
             <p class="form-note">Payment details are collected by the selected payment provider. ApplyPilot does not store card information.</p>
+            <p class="form-note">After successful payment, this page shows a desktop license key. Copy it and activate the local ApplyPilot desktop app.</p>
             <p class="form-note">
               By continuing, you agree to the ApplyPilot
               <a href="./terms.html">Terms</a>,
@@ -118,6 +120,10 @@
             <strong>Already paid?</strong>
             <p>Return here after checkout to retrieve your desktop license.</p>
             <button class="ghost-button" id="claimButton" type="button">Check payment</button>
+          </div>
+          <div class="payment-guidance">
+            <strong>Testing Razorpay?</strong>
+            <p>Use Razorpay test card or netbanking flows. Real UPI QR scans can fail in test mode with bank validation errors.</p>
           </div>
           <div class="license-result" id="licenseResult" hidden>
             <span>Desktop license</span>

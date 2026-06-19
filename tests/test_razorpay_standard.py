@@ -159,6 +159,39 @@ class RazorpayStandardTest(unittest.TestCase):
         self.assertEqual(verify_response.json()["email"], "paid@example.com")
         self.assertEqual(bad_response.status_code, 400)
 
+    def test_create_order_requires_fulfillment_secret_before_calling_razorpay(self):
+        try:
+            from fastapi.testclient import TestClient
+        except ImportError:
+            self.skipTest("server dependencies are not installed")
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "APPLYPILOT_ENV_FILE": str(Path(tmp) / "missing.env"),
+                "APPLYPILOT_FULFILLMENT_SECRET": "",
+                "RAZORPAY_KEY_ID": "rzp_test_key",
+                "RAZORPAY_KEY_SECRET": "rzp_test_secret",
+            },
+        ):
+            client = TestClient(create_app(db_path=Path(tmp) / "saas.sqlite3"))
+            with patch("applypilot.server.create_standard_order") as create_order:
+                response = client.post(
+                    "/api/create-order",
+                    json={
+                        "currency": "INR",
+                        "email": "blocked@example.com",
+                        "name": "Blocked User",
+                        "plan": "pro_byok",
+                        "ai_mode": "byok_local",
+                        "seats": 1,
+                    },
+                )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("APPLYPILOT_FULFILLMENT_SECRET", response.json()["detail"])
+        create_order.assert_not_called()
+
     def test_verify_unknown_order_does_not_issue_license(self):
         try:
             from fastapi.testclient import TestClient

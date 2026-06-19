@@ -226,6 +226,12 @@ docker compose up --build
 
 The SQLite SaaS database is persisted in the `applypilot-data` Docker volume. For public deployment, configure HTTPS, provider secrets, allowed origins, and webhook URLs.
 
+Shipping docs:
+
+- `docs/render-deployment.md`: Render deployment, required environment variables, health check, and hosted checkout URL.
+- `docs/launch-checklist.md`: final buyer-facing checklist before taking real payments.
+- `docs/billing.md`: Stripe/Razorpay checkout, webhooks, and license fulfillment notes.
+
 GitHub Actions are included for tests and native macOS/Windows desktop builds.
 
 ## Automation Modes

@@ -4,6 +4,7 @@ services:
     runtime: docker
     plan: starter
     autoDeploy: true
+    healthCheckPath: /api/v1/health
     disk:
       name: applypilot-data
       mountPath: /data
