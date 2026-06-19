@@ -2,8 +2,12 @@ services:
   - type: web
     name: applypilot-saas
     runtime: docker
-    plan: free
+    plan: starter
     autoDeploy: true
+    disk:
+      name: applypilot-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: APPLYPILOT_WEB_DIR
         value: /app/apps/web
