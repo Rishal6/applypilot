@@ -662,12 +662,14 @@ td strong {
   font-weight: 800;
 }
 
-.modal input {
+.modal input,
+.modal select {
   width: 100%;
   min-height: 42px;
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: #fbfcfd;
   color: var(--ink);
 }
 
@@ -1834,6 +1836,53 @@ td strong {
   padding: 0 11px;
   border-radius: 8px;
   font-size: 11px;
+}
+
+.inline-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid #d8e2db;
+  border-radius: 8px;
+  background: #fff;
+  color: #3e594c;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.ai-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ai-choice-grid article,
+.ai-status-panel {
+  padding: 12px;
+  border: 1px solid #e1e8e3;
+  border-radius: 9px;
+  background: #fafcfb;
+}
+
+.ai-choice-grid strong,
+.ai-status-panel strong {
+  display: block;
+  color: #31493c;
+  font-size: 12px;
+}
+
+.ai-choice-grid p,
+.ai-status-panel p {
+  margin: 5px 0 0;
+  color: #718078;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.ai-config-field[hidden] {
+  display: none;
 }
 
 .profile-summary-card {

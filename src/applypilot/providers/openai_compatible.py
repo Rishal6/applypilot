@@ -34,7 +34,7 @@ class OpenAICompatibleProvider:
         }
         data = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
-            f"{self.base_url}/v1/chat/completions",
+            f"{chat_completions_base(self.base_url)}/chat/completions",
             data=data,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
@@ -50,3 +50,7 @@ class OpenAICompatibleProvider:
         text = raw["choices"][0]["message"]["content"]
         return parse_llm_evaluation(text, job, preferences, self.name)
 
+
+def chat_completions_base(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    return normalized if normalized.endswith("/v1") else f"{normalized}/v1"

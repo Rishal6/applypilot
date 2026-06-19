@@ -16,6 +16,7 @@ const state = {
   messages: Boolean(window.APPLYPILOT_DESKTOP) ? [] : loadMessages(),
   onboardingStep: "",
   profileSave: Promise.resolve(),
+  providerStatus: null,
 };
 
 const onboardingSteps = [
@@ -76,6 +77,7 @@ const elements = {
   profilePercent: document.getElementById("profilePercent"),
   sidebarProfilePercent: document.getElementById("sidebarProfilePercent"),
   sidebarJobCount: document.getElementById("sidebarJobCount"),
+  sidebarProvider: document.getElementById("sidebarProvider"),
   profileTarget: document.getElementById("profileTarget"),
   profileBackground: document.getElementById("profileBackground"),
   profileLocation: document.getElementById("profileLocation"),
@@ -85,6 +87,16 @@ const elements = {
   policyMode: document.getElementById("policyMode"),
   agentState: document.getElementById("agentState"),
   topMatch: document.getElementById("topMatch"),
+  aiModal: document.getElementById("aiModal"),
+  aiForm: document.getElementById("aiForm"),
+  aiProvider: document.getElementById("aiProvider"),
+  aiBaseUrl: document.getElementById("aiBaseUrl"),
+  aiModel: document.getElementById("aiModel"),
+  aiApiKey: document.getElementById("aiApiKey"),
+  aiStatusText: document.getElementById("aiStatusText"),
+  closeAiModal: document.getElementById("closeAiModal"),
+  aiCancel: document.getElementById("aiCancel"),
+  aiSubmit: document.getElementById("aiSubmit"),
 };
 
 async function loadDashboard() {
@@ -171,6 +183,11 @@ function welcomeMessage() {
         <strong>Run my job search</strong>
         <small>Prepare applications with explicit approval.</small>
       </button>
+      <button type="button" data-action="ai-setup">
+        <span>05</span>
+        <strong>Set up AI</strong>
+        <small>Use local Ollama, BYOK APIs, or managed preview.</small>
+      </button>
     </div>
   `;
 }
@@ -208,6 +225,10 @@ function handleUserMessage(rawMessage) {
   }
   if (/\b(status|today|result|results|progress|activity)\b/.test(normalized)) {
     showStatus();
+    return;
+  }
+  if (/\b(ai setup|api key|api keys|openai|ollama|local model|groq|gemini|managed ai|byok)\b/.test(normalized)) {
+    showAISetup();
     return;
   }
   if (/\b(apply|start|run agent|auto.?apply)\b/.test(normalized)) {
@@ -462,6 +483,36 @@ function showStatus() {
   `);
 }
 
+async function showAISetup() {
+  if (!state.desktop) {
+    addAssistantMessage(`
+      <p>AI setup happens on the customer's own desktop, not on this public website. That keeps API keys and local model settings off ApplyPilot's server.</p>
+      <div class="ai-choice-grid">
+        <article>
+          <strong>Local model</strong>
+          <p>Install Ollama, run <code>ollama pull llama3.1</code>, then choose Ollama inside the desktop app.</p>
+        </article>
+        <article>
+          <strong>Bring your own API key</strong>
+          <p>Use OpenAI-compatible, Groq, or Gemini. Keys are saved locally in the desktop workspace only.</p>
+        </article>
+        <article>
+          <strong>ApplyPilot managed</strong>
+          <p>No customer key. In this MVP it is a managed preview path until hosted model routing is enabled.</p>
+        </article>
+      </div>
+      <div class="inline-actions">
+        <button type="button" data-action="open-desktop">Open desktop app</button>
+        <a class="inline-link" href="./checkout.html?plan=pro_byok&provider=razorpay">Choose BYOK plan</a>
+        <a class="inline-link" href="./checkout.html?plan=pro_managed&provider=razorpay">Choose Managed plan</a>
+      </div>
+    `);
+    return;
+  }
+  await loadProviderStatus();
+  openAiModal();
+}
+
 function showApplyConfirmation() {
   const policy = state.data?.policy || {};
   const summary = state.data?.summary || {};
@@ -572,6 +623,7 @@ function renderContext() {
     elements.agentState.textContent = `Running ${formatLabel(data.desktop.mode || "agent")}`;
   }
   elements.sidebarJobCount.textContent = formatNumber(summary.jobs || state.jobs.length);
+  renderProviderBadge(data.desktop?.provider || state.providerStatus);
 
   if (topJob) {
     elements.topMatch.innerHTML = `
@@ -586,6 +638,13 @@ function renderContext() {
       <p>Connect ApplyPilot or import jobs to see recommendations.</p>
     `;
   }
+}
+
+function renderProviderBadge(status) {
+  if (!elements.sidebarProvider) return;
+  const selected = status?.selected || "rules";
+  const provider = (status?.providers || []).find((item) => item.name === selected);
+  elements.sidebarProvider.textContent = provider ? provider.label.split(" ")[0] : formatLabel(selected);
 }
 
 function renderProfile() {
@@ -714,6 +773,7 @@ function handleAction(action) {
   if (action === "resume") showResume();
   if (action === "jobs") showJobs();
   if (action === "status") showStatus();
+  if (action === "ai-setup") showAISetup();
   if (action === "apply") showApplyConfirmation();
   if (action === "download-resume") downloadResume();
   if (action === "copy-resume") copyResume();
@@ -828,7 +888,7 @@ async function scoreJobs() {
   const response = await fetch("/api/score", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ provider: "rules" }),
+    body: JSON.stringify({ provider: state.providerStatus?.selected || "" }),
   });
   const data = await response.json();
   if (!response.ok) {
@@ -837,6 +897,125 @@ async function scoreJobs() {
   }
   showToast(data.scored ? `Rescored ${data.scored} jobs` : "No jobs are queued yet");
   await loadDashboard();
+}
+
+async function loadProviderStatus() {
+  if (!state.desktop) {
+    state.providerStatus = {
+      selected: "rules",
+      providers: [
+        { name: "rules", label: "Rules", configured: true },
+        { name: "ollama", label: "Ollama local model", configured: false },
+        { name: "openai", label: "OpenAI-compatible API", configured: false },
+        { name: "groq", label: "Groq API", configured: false },
+        { name: "gemini", label: "Gemini API", configured: false },
+        { name: "managed_preview", label: "ApplyPilot managed preview", configured: true },
+      ],
+    };
+    return state.providerStatus;
+  }
+  const response = await fetch("/api/provider/status", { cache: "no-store" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+  state.providerStatus = data;
+  renderProviderBadge(data);
+  return data;
+}
+
+function openAiModal() {
+  const status = state.providerStatus || {};
+  elements.aiProvider.value = status.selected || "rules";
+  applyAiProviderDefaults();
+  renderAiStatus(status);
+  elements.aiApiKey.value = "";
+  elements.aiModal.hidden = false;
+  elements.aiProvider.focus();
+}
+
+function closeAiModal() {
+  elements.aiModal.hidden = true;
+}
+
+function applyAiProviderDefaults() {
+  const provider = elements.aiProvider.value;
+  const status = state.providerStatus || {};
+  const row = (status.providers || []).find((item) => item.name === provider) || {};
+  elements.aiModel.value = row.model || defaultModelForProvider(provider);
+  elements.aiBaseUrl.value = row.base_url || defaultBaseUrlForProvider(provider);
+  document.querySelectorAll(".ai-config-field").forEach((field) => {
+    const name = field.dataset.aiField;
+    const show =
+      (name === "base_url" && ["ollama", "openai"].includes(provider)) ||
+      (name === "model" && ["ollama", "openai", "groq", "gemini"].includes(provider)) ||
+      (name === "api_key" && ["openai", "groq", "gemini"].includes(provider));
+    field.hidden = !show;
+  });
+  renderAiStatus(status);
+}
+
+function renderAiStatus(status) {
+  const selected = elements.aiProvider.value || status.selected || "rules";
+  const row = (status.providers || []).find((item) => item.name === selected);
+  if (!row) {
+    elements.aiStatusText.textContent = "Choose a provider. Settings are saved on this machine only.";
+    return;
+  }
+  const configured = row.configured ? "Configured" : "Needs setup";
+  const reachable = row.reachable === undefined ? "" : row.reachable ? " · Ollama reachable" : " · Ollama not reachable";
+  const model = row.model ? ` · ${row.model}` : "";
+  elements.aiStatusText.textContent = `${configured}${model}${reachable}. ${row.description || ""}`;
+}
+
+async function saveAiProviderConfig() {
+  if (!state.desktop) return;
+  elements.aiSubmit.disabled = true;
+  elements.aiSubmit.textContent = "Saving…";
+  try {
+    const response = await fetch("/api/provider/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        provider: elements.aiProvider.value,
+        base_url: elements.aiBaseUrl.value,
+        model: elements.aiModel.value,
+        api_key: elements.aiApiKey.value,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    state.providerStatus = data;
+    renderProviderBadge(data);
+    closeAiModal();
+    showToast("AI setup saved locally");
+    addAssistantMessage(`
+      <p><strong>AI setup saved.</strong> ApplyPilot will use ${escapeHtml(formatLabel(data.selected))} for local scoring. API keys stay on this machine.</p>
+      <div class="inline-actions">
+        <button type="button" data-action="score-jobs">Score jobs with this setup</button>
+        <button type="button" data-action="jobs">Show matches</button>
+      </div>
+    `);
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    elements.aiSubmit.disabled = false;
+    elements.aiSubmit.textContent = "Save local AI setup";
+  }
+}
+
+function defaultModelForProvider(provider) {
+  return {
+    ollama: "llama3.1",
+    openai: "gpt-4o-mini",
+    groq: "llama-3.1-8b-instant",
+    gemini: "gemini-1.5-flash",
+  }[provider] || "";
+}
+
+function defaultBaseUrlForProvider(provider) {
+  return {
+    ollama: "http://localhost:11434",
+    openai: "https://api.openai.com",
+  }[provider] || "";
 }
 
 async function startDesktopRun() {
@@ -1039,6 +1218,9 @@ function fetchDashboard() {
 
 async function initializeApplication() {
   await loadDesktopProfile();
+  if (state.desktop) {
+    await loadProviderStatus().catch((error) => showToast(`Provider status unavailable: ${error.message}`));
+  }
   bootConversation();
   await loadDashboard();
   if (state.desktop) {
@@ -1283,6 +1465,16 @@ elements.clearConnection.addEventListener("click", () => {
   closeConnectModal();
   loadDashboard();
   showToast("Using private local mode");
+});
+elements.closeAiModal.addEventListener("click", closeAiModal);
+elements.aiCancel.addEventListener("click", closeAiModal);
+elements.aiModal.addEventListener("click", (event) => {
+  if (event.target === elements.aiModal) closeAiModal();
+});
+elements.aiProvider.addEventListener("change", applyAiProviderDefaults);
+elements.aiForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveAiProviderConfig();
 });
 
 function requireDesktopActivation() {

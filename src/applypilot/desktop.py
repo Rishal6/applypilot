@@ -16,6 +16,7 @@ from .career import load_career_profile, resume_markdown, save_career_profile
 from .config import workspace_path, write_default_workspace
 from .dashboard import build_dashboard_data
 from .policy import load_policy, update_policy
+from .provider_config import configured_provider, load_local_provider_env, provider_status, save_provider_config
 from .saas_client import DEFAULT_ENDPOINT, activate_device, fetch_me, load_auth, save_auth, sync_workspace
 from .scoring import score_jobs
 from .search_plan import build_search_plan
@@ -34,6 +35,7 @@ class DesktopController:
 
     def status(self) -> dict[str, Any]:
         with self.lock:
+            load_local_provider_env(self.workspace)
             running = self.process is not None and self.process.poll() is None
             if self.process is not None and not running and self.exit_code is None:
                 self.exit_code = self.process.returncode
@@ -49,6 +51,7 @@ class DesktopController:
                 "connected": bool(auth.get("device_token")),
                 "customer": auth.get("customer") or {},
                 "endpoint": auth.get("endpoint") or DEFAULT_ENDPOINT,
+                "provider": provider_status(self.workspace),
             }
 
     def activate(self, endpoint: str, license_key: str, device_id: str, device_name: str) -> dict[str, Any]:
@@ -90,6 +93,7 @@ class DesktopController:
         return resume_markdown(self.career_profile())
 
     def dashboard(self) -> dict[str, Any]:
+        load_local_provider_env(self.workspace)
         data = build_dashboard_data(self.workspace)
         data["desktop"] = self.status()
         try:
@@ -106,7 +110,9 @@ class DesktopController:
             data["search_plan"] = []
         return data
 
-    def score(self, provider: str = "rules") -> dict[str, Any]:
+    def score(self, provider: str = "") -> dict[str, Any]:
+        load_local_provider_env(self.workspace)
+        provider = provider or configured_provider(self.workspace)
         store = Store(self.workspace)
         jobs = store.load_jobs()
         if not jobs:
@@ -115,6 +121,14 @@ class DesktopController:
         store.save_evaluations(evaluations)
         self.logs.append(f"Scored {len(evaluations)} jobs with {provider}")
         return {"status": "complete", "scored": len(evaluations), "provider": provider}
+
+    def provider_status(self) -> dict[str, Any]:
+        return provider_status(self.workspace)
+
+    def save_provider(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = save_provider_config(self.workspace, payload)
+        self.logs.append(f"AI provider configured: {result['selected']}")
+        return result
 
     def set_policy(
         self,
@@ -155,6 +169,7 @@ class DesktopController:
             if self.process is not None and self.process.poll() is None:
                 raise RuntimeError("The desktop agent is already running.")
             command = agent_command(self.workspace, mode)
+            load_local_provider_env(self.workspace)
             env = os.environ.copy()
             env["PYTHONUNBUFFERED"] = "1"
             self.process = subprocess.Popen(
@@ -274,8 +289,23 @@ def create_desktop_app(workspace: Path):
         require_local_origin(request)
         body = await request.json()
         try:
-            return controller.score(str(body.get("provider") or "rules"))
+            return controller.score(str(body.get("provider") or ""))
         except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/provider/status")
+    def get_provider_status() -> dict[str, Any]:
+        return controller.provider_status()
+
+    @app.post("/api/provider/config")
+    async def configure_provider(request: Request) -> dict[str, Any]:
+        require_local_origin(request)
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail="Provider config must be a JSON object.")
+        try:
+            return controller.save_provider(body)
+        except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/policy")

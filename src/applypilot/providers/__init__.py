@@ -6,6 +6,7 @@ from .groq_provider import GroqProvider
 from .ollama import OllamaProvider
 from .openai_compatible import OpenAICompatibleProvider
 from .rules import RulesProvider
+from .managed_preview import ManagedPreviewProvider
 
 
 def get_provider(name: str):
@@ -22,6 +23,8 @@ def get_provider(name: str):
         return GeminiProvider()
     if normalized == "auto":
         return FallbackProvider()
+    if normalized in {"managed", "managed-preview", "managed_preview", "managed_api", "hosted_model", "hybrid"}:
+        return ManagedPreviewProvider()
     if normalized in {"anthropic", "huggingface"}:
         raise SystemExit(
             f"Provider '{normalized}' is reserved in the architecture but not enabled yet. "

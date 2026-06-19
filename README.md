@@ -231,6 +231,7 @@ Shipping docs:
 - `docs/render-deployment.md`: Render deployment, required environment variables, health check, and hosted checkout URL.
 - `docs/launch-checklist.md`: final buyer-facing checklist before taking real payments.
 - `docs/billing.md`: Stripe/Razorpay checkout, webhooks, and license fulfillment notes.
+- `docs/customer-ai-flows.md`: local model, BYOK API key, and managed-preview customer flows.
 
 GitHub Actions are included for tests and native macOS/Windows desktop builds.
 

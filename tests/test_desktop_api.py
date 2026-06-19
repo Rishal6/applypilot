@@ -84,6 +84,34 @@ class DesktopApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertIn("Activate this desktop", response.json()["detail"])
 
+    def test_provider_config_endpoint_redacts_key_and_sets_provider(self):
+        try:
+            from fastapi.testclient import TestClient
+        except ImportError:
+            self.skipTest("desktop dependencies are not installed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / ".applypilot"
+            client = TestClient(create_desktop_app(workspace))
+            response = client.post(
+                "/api/provider/config",
+                headers={"Origin": "http://127.0.0.1:8765"},
+                json={
+                    "provider": "openai",
+                    "api_key": "sk-customer-secret",
+                    "model": "gpt-4o-mini",
+                    "base_url": "https://api.openai.com/v1",
+                },
+            )
+            status = client.get("/api/provider/status")
+            env_text = (workspace / "provider.env").read_text(encoding="utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["selected"], "openai")
+        self.assertEqual(status.status_code, 200)
+        self.assertIn("sk-customer-secret", env_text)
+        self.assertNotIn("sk-customer-secret", repr(status.json()))
+
 
 if __name__ == "__main__":
     unittest.main()

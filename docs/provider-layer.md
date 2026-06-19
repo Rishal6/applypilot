@@ -34,10 +34,33 @@ For OpenAI-compatible gateways:
 OPENAI_BASE_URL=https://your-gateway.example.com OPENAI_API_KEY=... OPENAI_MODEL=... applypilot score --provider openai
 ```
 
+### `groq`
+
+Groq chat completions using `GROQ_API_KEY`.
+
+```bash
+GROQ_API_KEY=... GROQ_MODEL=llama-3.1-8b-instant applypilot score --provider groq
+```
+
+### `gemini`
+
+Gemini API using `GEMINI_API_KEY`.
+
+```bash
+GEMINI_API_KEY=... GEMINI_MODEL=gemini-1.5-flash applypilot score --provider gemini
+```
+
+### `managed_preview`
+
+No customer key. Rules-backed managed-plan preview until hosted model routing is live.
+
+```bash
+applypilot score --provider managed_preview
+```
+
 ## Next Providers
 
 - Anthropic / Claude
-- Gemini
 - Hugging Face Inference Endpoints
 - managed ApplyPilot SaaS provider
 
@@ -52,4 +75,3 @@ Every provider must return the same fields:
 - missing terms
 
 This keeps the CLI, desktop app, MCP server, and SaaS dashboard independent from provider-specific APIs.
-
