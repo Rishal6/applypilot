@@ -2,6 +2,8 @@
 
 Local-first AI job search copilot.
 
+Live landing page: https://rishal6.github.io/applypilot/
+
 ApplyPilot is the product-grade rewrite of the working LinkedIn agent. The core idea is simple: keep risky browser/session work on the user's machine, put paid product value in the SaaS layer, and expose the same agent through CLI, desktop, MCP, and ChatGPT/Codex distribution.
 
 ## Product Positioning

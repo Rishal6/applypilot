@@ -10,7 +10,7 @@ services:
       - key: APPLYPILOT_SAAS_DB
         value: /data/applypilot.sqlite3
       - key: APPLYPILOT_ALLOWED_ORIGINS
-        value: https://applypilot.vercel.app
+        value: https://rishal6.github.io,https://applypilot.vercel.app
       - key: APPLYPILOT_ADMIN_TOKEN
         sync: false
       - key: APPLYPILOT_FULFILLMENT_SECRET
