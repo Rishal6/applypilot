@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ApplyPilot Billing</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="checkout-shell">
+      <header class="checkout-header">
+        <a class="brand checkout-brand" href="./">
+          <span class="brand-mark" aria-hidden="true">AP</span>
+          <span>
+            <strong>ApplyPilot</strong>
+            <span>Secure checkout</span>
+          </span>
+        </a>
+        <a class="ghost-button" href="./">Dashboard</a>
+      </header>
+
+      <section class="checkout-layout">
+        <div class="checkout-main">
+          <div>
+            <p class="eyebrow">Subscription</p>
+            <h1>Choose your ApplyPilot plan</h1>
+            <p class="checkout-copy">The desktop agent runs locally. Your plan unlocks licensing, SaaS sync, updates, and your selected AI mode.</p>
+          </div>
+
+          <div class="plan-grid" id="planGrid">
+            <button class="plan-option active" type="button" data-plan="pro_byok" data-ai-mode="byok_local">
+              <span>Pro BYOK</span>
+              <strong>₹999 <small>/ month</small></strong>
+              <p>Use your own Claude, OpenAI, Gemini, Groq, Hugging Face, or Ollama access.</p>
+            </button>
+            <button class="plan-option" type="button" data-plan="pro_managed" data-ai-mode="hybrid">
+              <span>Pro Managed</span>
+              <strong>₹1,999 <small>/ month</small></strong>
+              <p>No API key required. ApplyPilot provides managed AI credits with fair-use limits.</p>
+            </button>
+            <button class="plan-option" type="button" data-plan="team" data-ai-mode="hybrid">
+              <span>Team</span>
+              <strong>₹4,999 <small>/ month</small></strong>
+              <p>Multi-seat licensing and shared oversight for coaches and career teams.</p>
+            </button>
+          </div>
+
+          <form class="checkout-form panel" id="checkoutForm">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Customer</p>
+                <h2>Billing details</h2>
+              </div>
+              <div class="segmented" aria-label="Payment provider">
+                <button class="segment active" type="button" data-provider="razorpay">Razorpay</button>
+                <button class="segment" type="button" data-provider="stripe">Stripe</button>
+              </div>
+            </div>
+            <div class="form-grid">
+              <label>
+                <span>Email</span>
+                <input id="checkoutEmail" type="email" required autocomplete="email" />
+              </label>
+              <label>
+                <span>Name</span>
+                <input id="checkoutName" type="text" required autocomplete="name" />
+              </label>
+              <label>
+                <span>Company</span>
+                <input id="checkoutCompany" type="text" autocomplete="organization" />
+              </label>
+              <label>
+                <span>Seats</span>
+                <input id="checkoutSeats" type="number" min="1" max="100" value="1" required />
+              </label>
+              <label class="phone-field">
+                <span>Phone</span>
+                <input id="checkoutPhone" type="tel" autocomplete="tel" />
+              </label>
+            </div>
+            <button class="checkout-submit" id="checkoutSubmit" type="submit">Continue to Razorpay</button>
+            <p class="form-note">Payment details are collected by the selected payment provider. ApplyPilot does not store card information.</p>
+            <p class="form-note">
+              By continuing, you agree to the ApplyPilot
+              <a href="./terms.html">Terms</a>,
+              <a href="./privacy.html">Privacy Policy</a>, and
+              <a href="./refund.html">Refund Policy</a>.
+            </p>
+          </form>
+        </div>
+
+        <aside class="checkout-summary panel">
+          <p class="eyebrow">Order</p>
+          <h2 id="summaryPlan">Pro BYOK</h2>
+          <dl>
+            <div>
+              <dt>AI mode</dt>
+              <dd id="summaryMode">BYOK Local</dd>
+            </div>
+            <div>
+              <dt>Desktop seats</dt>
+              <dd id="summarySeats">1</dd>
+            </div>
+            <div>
+              <dt>Billing</dt>
+              <dd>Monthly</dd>
+            </div>
+          </dl>
+          <div class="claim-panel" id="claimPanel">
+            <strong>Already paid?</strong>
+            <p>Return here after checkout to retrieve your desktop license.</p>
+            <button class="ghost-button" id="claimButton" type="button">Check payment</button>
+          </div>
+          <div class="license-result" id="licenseResult" hidden>
+            <span>Desktop license</span>
+            <code id="licenseKey"></code>
+            <button class="ghost-button" id="copyLicense" type="button">Copy license</button>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./checkout.js"></script>
+  </body>
+</html>

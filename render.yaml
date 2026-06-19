@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: applypilot-saas
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: APPLYPILOT_WEB_DIR
+        value: /app/apps/web
+      - key: APPLYPILOT_SAAS_DB
+        value: /data/applypilot.sqlite3
+      - key: APPLYPILOT_ALLOWED_ORIGINS
+        value: https://applypilot.vercel.app
+      - key: APPLYPILOT_ADMIN_TOKEN
+        sync: false
+      - key: APPLYPILOT_FULFILLMENT_SECRET
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: APPLYPILOT_RAZORPAY_PLAN_PRO_BYOK
+        sync: false
+      - key: APPLYPILOT_RAZORPAY_PLAN_PRO_MANAGED
+        sync: false
+      - key: APPLYPILOT_RAZORPAY_PLAN_TEAM
+        sync: false

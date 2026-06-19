@@ -1,0 +1,13 @@
+services:
+  applypilot:
+    build: .
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    volumes:
+      - applypilot-data:/data
+    restart: unless-stopped
+
+volumes:
+  applypilot-data:

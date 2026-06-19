@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="ApplyPilot is a conversational career agent that builds your profile, prepares applications, and runs your job search."
+    />
+    <title>ApplyPilot — Your Career Agent</title>
+    <link rel="stylesheet" href="./styles.css?v=20260619-3" />
+  </head>
+  <body>
+    <div class="career-shell">
+      <aside class="career-sidebar" aria-label="ApplyPilot navigation">
+        <a class="career-brand" href="./" aria-label="ApplyPilot home">
+          <span class="career-brand-mark" aria-hidden="true">AP</span>
+          <span>
+            <strong>ApplyPilot</strong>
+            <small>Your career agent</small>
+          </span>
+        </a>
+
+        <button class="new-chat-button" id="newConversation" type="button">
+          <span aria-hidden="true">＋</span>
+          New conversation
+        </button>
+
+        <nav class="career-nav" aria-label="Career tools">
+          <button class="career-nav-item active" type="button" data-prompt="Help me plan my job search">
+            <span aria-hidden="true">✦</span>
+            Career chat
+          </button>
+          <button class="career-nav-item" type="button" data-action="profile">
+            <span aria-hidden="true">◎</span>
+            My profile
+            <small id="sidebarProfilePercent">0%</small>
+          </button>
+          <button class="career-nav-item" type="button" data-action="jobs">
+            <span aria-hidden="true">⌁</span>
+            Job matches
+            <small id="sidebarJobCount">0</small>
+          </button>
+          <button class="career-nav-item" type="button" data-action="status">
+            <span aria-hidden="true">↗</span>
+            Activity
+          </button>
+          <a class="career-nav-item" href="./checkout.html">
+            <span aria-hidden="true">◇</span>
+            Billing
+          </a>
+        </nav>
+
+        <div class="conversation-history">
+          <p>Recent</p>
+          <button type="button" data-prompt="Help me continue my job search">
+            <span>Job search plan</span>
+            <small>Today</small>
+          </button>
+        </div>
+
+        <div class="sidebar-account">
+          <div>
+            <span class="account-avatar" aria-hidden="true">R</span>
+            <span>
+              <strong id="accountPlan">Founder Preview</strong>
+              <small id="accountMode">Local-first agent</small>
+            </span>
+          </div>
+          <button id="connectButton" type="button" aria-label="Connect dashboard">•••</button>
+        </div>
+      </aside>
+
+      <main class="chat-workspace">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">Career workspace</p>
+            <h1>What should we work on?</h1>
+          </div>
+          <div class="chat-header-actions">
+            <span class="connection-pill" id="syncState">
+              <span class="connection-dot" aria-hidden="true"></span>
+              Loading
+            </span>
+            <button class="small-ghost-button" id="refreshButton" type="button">Refresh</button>
+          </div>
+        </header>
+
+        <section class="chat-feed" id="chatFeed" aria-live="polite" aria-label="Conversation"></section>
+
+        <div class="suggestion-row" id="suggestionRow" aria-label="Suggested prompts">
+          <button type="button" data-action="onboard">I don’t have a resume</button>
+          <button type="button" data-action="jobs">Show my best matches</button>
+          <button type="button" data-action="status">What happened today?</button>
+          <button type="button" data-action="apply">Apply to top jobs</button>
+        </div>
+
+        <form class="chat-composer" id="chatForm">
+          <label class="sr-only" for="chatInput">Message ApplyPilot</label>
+          <textarea
+            id="chatInput"
+            rows="1"
+            placeholder="Tell me what kind of work you want, or what you’ve done so far…"
+            autocomplete="off"
+          ></textarea>
+          <div class="composer-footer">
+            <span>Enter to send · Shift + Enter for a new line</span>
+            <button id="sendButton" type="submit" aria-label="Send message">↑</button>
+          </div>
+        </form>
+        <p class="privacy-note">Your career profile stays local to ApplyPilot unless you explicitly connect or export it.</p>
+      </main>
+
+      <aside class="context-rail" aria-label="Career context">
+        <section class="context-card profile-context-card">
+          <div class="context-card-header">
+            <div>
+              <p class="eyebrow">Candidate profile</p>
+              <h2 id="profileName">Getting to know you</h2>
+            </div>
+            <button class="icon-ghost-button" type="button" data-action="onboard" aria-label="Edit profile">✎</button>
+          </div>
+          <div class="completion-row">
+            <div class="completion-track"><span id="profileProgress"></span></div>
+            <strong id="profilePercent">0%</strong>
+          </div>
+          <dl class="profile-facts">
+            <div>
+              <dt>Target</dt>
+              <dd id="profileTarget">Not set</dd>
+            </div>
+            <div>
+              <dt>Background</dt>
+              <dd id="profileBackground">Tell me what you do</dd>
+            </div>
+            <div>
+              <dt>Location</dt>
+              <dd id="profileLocation">Not set</dd>
+            </div>
+          </dl>
+          <button class="context-primary-button" type="button" data-action="resume">Build my resume</button>
+        </section>
+
+        <section class="context-card">
+          <div class="context-card-header">
+            <div>
+              <p class="eyebrow">Agent today</p>
+              <h2>Job search status</h2>
+            </div>
+            <span class="agent-state" id="agentState">Ready</span>
+          </div>
+          <div class="mini-metrics">
+            <div>
+              <strong id="todayApplied">0</strong>
+              <span>Applied</span>
+            </div>
+            <div>
+              <strong id="shortlistCount">0</strong>
+              <span>Matches</span>
+            </div>
+            <div>
+              <strong id="dailyLimit">0</strong>
+              <span>Daily limit</span>
+            </div>
+          </div>
+          <div class="policy-line">
+            <span>Safety policy</span>
+            <strong id="policyMode">Review only</strong>
+          </div>
+        </section>
+
+        <section class="context-card top-match-card">
+          <p class="eyebrow">Current best match</p>
+          <div id="topMatch">
+            <h2>No jobs synced yet</h2>
+            <p>Connect ApplyPilot or import jobs to see recommendations.</p>
+          </div>
+        </section>
+
+        <section class="safety-note">
+          <span aria-hidden="true">◉</span>
+          <p><strong>You stay in control.</strong> ApplyPilot asks before auto-submitting applications or changing external accounts.</p>
+        </section>
+      </aside>
+    </div>
+
+    <div class="modal-backdrop" id="connectModal" hidden>
+      <form class="modal" id="connectForm">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">SaaS connection</p>
+            <h2 id="connectTitle">Connect ApplyPilot data</h2>
+          </div>
+          <button class="icon-button" id="closeConnect" type="button" aria-label="Close">×</button>
+        </div>
+        <label>
+          <span>API endpoint</span>
+          <input id="apiEndpoint" type="url" placeholder="http://127.0.0.1:8787" />
+        </label>
+        <label>
+          <span id="connectTokenLabel">License or device token</span>
+          <input id="apiToken" type="password" autocomplete="off" />
+        </label>
+        <div class="modal-actions">
+          <button class="ghost-button" id="clearConnection" type="button">Use bundled data</button>
+          <button class="ghost-button primary" id="connectSubmit" type="submit">Connect</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./runtime.js?v=20260619-3"></script>
+    <script src="./app.js?v=20260619-3"></script>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "jobs": [
+    {
+      "job_id": "example-1",
+      "title": "Senior GenAI Engineer",
+      "company": "Example AI",
+      "location": "Remote",
+      "url": "https://example.com/jobs/1",
+      "description": "Build RAG pipelines, agent workflows, and Python services using AWS Bedrock and FastAPI.",
+      "easy_apply": true
+    },
+    {
+      "job_id": "example-2",
+      "title": "Sales Development Representative",
+      "company": "Example Sales",
+      "location": "Remote",
+      "url": "https://example.com/jobs/2",
+      "description": "Outbound sales role.",
+      "easy_apply": true
+    }
+  ]
+}
+

@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "applypilot-ai"
+version = "0.1.0"
+description = "AI-powered job application agent. Auto-applies to LinkedIn, Naukri, and more. Score jobs with AI, fill forms, track applications."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Rishal V S", email = "rishalrishal6@gmail.com" }]
+license = {text = "Proprietary"}
+keywords = ["ai", "jobs", "linkedin", "naukri", "automation", "llm", "agent", "career"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Office/Business",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests>=2.28",
+    "pydantic>=2.0",
+]
+
+[project.urls]
+Homepage = "https://applypilot.dev"
+Repository = "https://github.com/Rishal6/applypilot"
+
+[project.optional-dependencies]
+ai = ["groq>=0.9", "google-generativeai>=0.7", "openai>=1.30"]
+desktop = ["fastapi>=0.115", "uvicorn[standard]>=0.30"]
+server = ["cryptography>=43", "fastapi>=0.115", "uvicorn[standard]>=0.30"]
+package = ["nuitka>=2.7", "ordered-set>=4.1", "zstandard>=0.23"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+applypilot = "applypilot.cli:main"
+applypilot-desktop = "applypilot.desktop:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+applypilot = ["desktop_web/*", "desktop_web/**/*"]

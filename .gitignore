@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.venv/
+.build-venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.applypilot/
+*.sqlite
+*.sqlite3
+*.db
+*.egg-info/
+dist/
+build/
+node_modules/

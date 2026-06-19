@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ApplyPilot Desktop</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="desktop-shell">
+      <aside>
+        <div class="brand">
+          <span>AP</span>
+          <div>
+            <strong>ApplyPilot</strong>
+            <small>Desktop Agent</small>
+          </div>
+        </div>
+        <nav>
+          <button class="active" type="button">Control</button>
+          <button id="openDashboard" type="button">SaaS Dashboard</button>
+        </nav>
+        <div class="account">
+          <small>License</small>
+          <strong id="accountPlan">Not connected</strong>
+          <span id="accountEmail">Activate this device</span>
+        </div>
+      </aside>
+
+      <main>
+        <header>
+          <div>
+            <p>LOCAL EXECUTOR</p>
+            <h1>Desktop Agent Control</h1>
+          </div>
+          <span class="status" id="agentStatus">Idle</span>
+        </header>
+
+        <section class="metrics">
+          <article>
+            <span>Policy</span>
+            <strong id="policyMode">Review only</strong>
+          </article>
+          <article>
+            <span>Daily Limit</span>
+            <strong id="dailyLimit">0</strong>
+          </article>
+          <article>
+            <span>Minimum Score</span>
+            <strong id="minScore">0</strong>
+          </article>
+        </section>
+
+        <section class="grid">
+          <form class="panel" id="activationForm">
+            <div class="panel-title">
+              <div>
+                <p>SAAS</p>
+                <h2>Device Activation</h2>
+              </div>
+            </div>
+            <label>
+              <span>API endpoint</span>
+              <input id="endpoint" type="url" value="http://127.0.0.1:8787" required />
+            </label>
+            <label>
+              <span>License key</span>
+              <input id="licenseKey" type="password" required />
+            </label>
+            <button class="primary" type="submit">Activate Device</button>
+          </form>
+
+          <section class="panel">
+            <div class="panel-title">
+              <div>
+                <p>AWAY MODE</p>
+                <h2>Run Agent</h2>
+              </div>
+            </div>
+            <label>
+              <span>Workflow</span>
+              <select id="runMode">
+                <option value="apply">LinkedIn + Naukri</option>
+                <option value="linkedin">LinkedIn</option>
+                <option value="naukri">Naukri</option>
+                <option value="leads">Lead Hunter</option>
+                <option value="all">Apply + Lead Hunter</option>
+              </select>
+            </label>
+            <label class="confirm">
+              <input id="confirmSubmit" type="checkbox" />
+              <span>I confirm auto-submit is enabled for this run.</span>
+            </label>
+            <div class="actions">
+              <button class="primary" id="runButton" type="button">Start</button>
+              <button id="stopButton" type="button">Stop</button>
+              <button id="syncButton" type="button">Sync</button>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel console">
+          <div class="panel-title">
+            <div>
+              <p>ACTIVITY</p>
+              <h2>Agent Log</h2>
+            </div>
+          </div>
+          <pre id="agentLog">Waiting for agent activity.</pre>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
