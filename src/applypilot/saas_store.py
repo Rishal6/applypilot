@@ -550,6 +550,22 @@ class SaasStore:
             record.pop("claim_hash", None)
         return record
 
+    def get_billing_checkout_by_reference(self, provider: str, external_reference: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM billing_checkouts
+                WHERE provider = ? AND external_reference = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (provider, external_reference),
+            ).fetchone()
+        record = row_to_dict(row)
+        if record:
+            record.pop("claim_hash", None)
+        return record
+
     def reserve_billing_event(self, provider: str, event_id: str, event_type: str) -> bool:
         with self.connect() as conn:
             existing = conn.execute(

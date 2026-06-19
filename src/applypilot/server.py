@@ -3,13 +3,15 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .billing import BillingService, CheckoutRequest
+from .billing import DEFAULT_AI_MODE, BillingService, CheckoutRequest
 from .config import workspace_path
 from .razorpay_standard import (
     RazorpayApiError,
     RazorpayAuthenticationError,
     RazorpayConfigurationError,
     create_standard_order,
+    expected_standard_amount_paise,
+    load_dotenv_once,
     verify_standard_payment,
 )
 from .saas_store import SaasStore, default_saas_db
@@ -23,6 +25,7 @@ def create_app(db_path: str | Path | None = None, web_dir: str | Path | None = N
     except ImportError as exc:
         raise RuntimeError("Install server dependencies with: pip install -e '.[server]'") from exc
 
+    load_dotenv_once()
     db = Path(db_path or os.environ.get("APPLYPILOT_SAAS_DB") or default_saas_db(workspace_path(".")))
     store = SaasStore(db)
     billing = BillingService(store)
@@ -131,7 +134,33 @@ def create_app(db_path: str | Path | None = None, web_dir: str | Path | None = N
     async def create_razorpay_standard_order(request: Request) -> dict[str, Any]:
         body = await request.json()
         try:
-            return create_standard_order(body)
+            plan = str(body.get("plan") or "pro_byok")
+            seats = int(body.get("seats") or 1)
+            ai_mode = str(body.get("ai_mode") or DEFAULT_AI_MODE.get(plan, "byok_local"))
+            amount = expected_standard_amount_paise(plan, seats)
+            created = store.create_billing_checkout(
+                provider="razorpay_standard",
+                email=str(body.get("email") or ""),
+                name=str(body.get("name") or ""),
+                company=str(body.get("company") or ""),
+                plan=plan,
+                ai_mode=ai_mode,
+                seats=seats,
+            )
+            order = create_standard_order({
+                "amount": amount,
+                "currency": str(body.get("currency") or "INR"),
+                "receipt": created["checkout"]["id"],
+            })
+            store.set_billing_checkout_reference(created["checkout"]["id"], order["order_id"])
+            return {
+                **order,
+                "checkout_id": created["checkout"]["id"],
+                "claim_token": created["claim_token"],
+                "plan": plan,
+                "ai_mode": ai_mode,
+                "seats": seats,
+            }
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except (RazorpayConfigurationError, RazorpayAuthenticationError) as exc:
@@ -143,11 +172,24 @@ def create_app(db_path: str | Path | None = None, web_dir: str | Path | None = N
     async def verify_razorpay_standard_payment(request: Request) -> dict[str, Any]:
         body = await request.json()
         try:
-            return verify_standard_payment(body)
+            verified = verify_standard_payment(body)
+            checkout = store.get_billing_checkout_by_reference(
+                "razorpay_standard",
+                str(verified["order_id"]),
+            )
+            if not checkout:
+                raise ValueError("Unknown Razorpay order.")
+            return billing.fulfill_standard_checkout(
+                checkout_id=str(checkout["id"]),
+                external_reference=str(verified["order_id"]),
+                payment_id=str(verified["payment_id"]),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.post("/api/v1/webhooks/stripe")
     async def stripe_webhook(request: Request) -> dict[str, Any]:

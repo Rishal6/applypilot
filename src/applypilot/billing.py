@@ -315,6 +315,43 @@ class BillingService:
             )
         return response
 
+    def fulfill_standard_checkout(
+        self,
+        checkout_id: str,
+        external_reference: str,
+        payment_id: str,
+    ) -> dict[str, Any]:
+        result = self.fulfill_checkout(
+            checkout_id=checkout_id,
+            external_reference=external_reference,
+            provider="razorpay_standard",
+            external_subscription_id="",
+            external_customer_id="",
+            subscription_status="paid",
+            current_period_end="",
+        )
+        checkout = result["checkout"]
+        response = {
+            "success": True,
+            "status": checkout["status"],
+            "provider": checkout["provider"],
+            "checkout_id": checkout["id"],
+            "order_id": external_reference,
+            "payment_id": payment_id,
+            "plan": checkout["plan"],
+            "ai_mode": checkout["ai_mode"],
+            "email": checkout["email"],
+            "created": result["created"],
+        }
+        if result.get("license_key"):
+            response["license_key"] = result["license_key"]
+        elif checkout.get("encrypted_license_key"):
+            response["license_key"] = decrypt_text(
+                str(checkout["encrypted_license_key"]),
+                self.fulfillment_secret,
+            )
+        return response
+
     def require_fulfillment_secret(self) -> None:
         if not self.fulfillment_secret:
             raise RuntimeError("APPLYPILOT_FULFILLMENT_SECRET is not configured.")

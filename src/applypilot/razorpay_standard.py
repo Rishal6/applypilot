@@ -10,6 +10,11 @@ from typing import Any, Callable
 
 MIN_ORDER_AMOUNT_PAISE = 100
 DEFAULT_CURRENCY = "INR"
+STANDARD_PLAN_AMOUNTS_PAISE = {
+    "pro_byok": 99900,
+    "pro_managed": 199900,
+    "team": 499900,
+}
 _DOTENV_LOADED = False
 
 
@@ -129,6 +134,14 @@ def parse_receipt(value: Any) -> str:
     if not receipt:
         receipt = f"ap_{uuid.uuid4().hex[:20]}"
     return receipt[:40]
+
+
+def expected_standard_amount_paise(plan: str, seats: int) -> int:
+    if plan not in STANDARD_PLAN_AMOUNTS_PAISE:
+        raise ValueError("Choose a paid plan: pro_byok, pro_managed, or team.")
+    if seats < 1:
+        raise ValueError("Seats must be at least 1.")
+    return STANDARD_PLAN_AMOUNTS_PAISE[plan] * seats
 
 
 def looks_like_auth_error(exc: Exception) -> bool:

@@ -97,22 +97,28 @@ async function startRazorpayStandardCheckout() {
   checkoutElements.submit.disabled = true;
   checkoutElements.submit.textContent = "Creating Razorpay order...";
   hidePaymentResult();
+  hideLicenseResult();
   try {
     await ensureRazorpayLoaded();
-    const amount = selectedAmount();
     const orderResponse = await fetch("/api/create-order", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
-        amount,
         currency: "INR",
-        receipt: `ap_${Date.now()}`,
+        email: checkoutElements.email.value,
+        name: checkoutElements.name.value,
+        company: checkoutElements.company.value,
+        seats: Number(checkoutElements.seats.value || 1),
+        plan: checkoutState.plan,
+        ai_mode: checkoutState.aiMode,
       }),
     });
     const order = await orderResponse.json();
     if (!orderResponse.ok) {
       throw new Error(order.detail || `HTTP ${orderResponse.status}`);
     }
+    localStorage.setItem("applypilot.billing.claim_token", order.claim_token || "");
+    localStorage.setItem("applypilot.billing.provider", "razorpay_standard");
 
     let completed = false;
     const razorpay = new window.Razorpay({
@@ -210,6 +216,10 @@ async function verifyRazorpayPayment(payment) {
       throw new Error(data.detail || `HTTP ${response.status}`);
     }
     showPaymentResult("Payment verified", `Payment: ${data.payment_id}`);
+    if (data.license_key) {
+      checkoutElements.licenseKey.textContent = data.license_key;
+      checkoutElements.licenseResult.hidden = false;
+    }
     showCheckoutToast("Payment verified");
   } catch (error) {
     showPaymentResult("Verification failed", error.message);
@@ -308,6 +318,11 @@ function showPaymentResult(status, reference) {
 function hidePaymentResult() {
   checkoutElements.paymentResult.hidden = true;
   checkoutElements.paymentReference.textContent = "";
+}
+
+function hideLicenseResult() {
+  checkoutElements.licenseResult.hidden = true;
+  checkoutElements.licenseKey.textContent = "";
 }
 
 const query = new URLSearchParams(window.location.search);

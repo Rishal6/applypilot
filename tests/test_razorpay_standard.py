@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from applypilot.razorpay_standard import (
     create_standard_order,
+    expected_standard_amount_paise,
     parse_amount,
     verify_standard_payment,
 )
@@ -54,11 +55,13 @@ class RazorpayStandardTest(unittest.TestCase):
         self.assertEqual(fake_order.payload["amount"], 99900)
         with self.assertRaises(ValueError):
             parse_amount(99)
+        self.assertEqual(expected_standard_amount_paise("team", 2), 999800)
 
     def test_verify_standard_payment_signature(self):
         order_id = "order_test_123"
         payment_id = "pay_test_123"
         secret = "rzp_test_secret"
+        fulfillment_secret = "fulfillment-secret-test"
         signature = hmac.new(
             secret.encode(),
             f"{order_id}|{payment_id}".encode(),
@@ -92,13 +95,20 @@ class RazorpayStandardTest(unittest.TestCase):
         order_id = "order_test_123"
         payment_id = "pay_test_123"
         secret = "rzp_test_secret"
+        fulfillment_secret = "fulfillment-secret-test"
         signature = hmac.new(
             secret.encode(),
             f"{order_id}|{payment_id}".encode(),
             hashlib.sha256,
         ).hexdigest()
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "RAZORPAY_KEY_SECRET": secret,
+                "APPLYPILOT_FULFILLMENT_SECRET": fulfillment_secret,
+            },
+        ):
             client = TestClient(create_app(db_path=Path(tmp) / "saas.sqlite3"))
             with patch("applypilot.server.create_standard_order") as create_order:
                 create_order.return_value = {
@@ -107,30 +117,82 @@ class RazorpayStandardTest(unittest.TestCase):
                     "currency": "INR",
                     "key_id": "rzp_test_key",
                 }
-                response = client.post("/api/create-order", json={"amount": 99900, "currency": "INR"})
-            with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": secret}):
-                verify_response = client.post(
-                    "/api/verify-payment",
+                response = client.post(
+                    "/api/create-order",
                     json={
-                        "razorpay_order_id": order_id,
-                        "razorpay_payment_id": payment_id,
-                        "razorpay_signature": signature,
+                        "amount": 100,
+                        "currency": "INR",
+                        "email": "paid@example.com",
+                        "name": "Paid User",
+                        "company": "Acme",
+                        "plan": "pro_byok",
+                        "ai_mode": "byok_local",
+                        "seats": 1,
                     },
                 )
-                bad_response = client.post(
-                    "/api/verify-payment",
-                    json={
-                        "razorpay_order_id": order_id,
-                        "razorpay_payment_id": payment_id,
-                        "razorpay_signature": "bad",
-                    },
-                )
+                create_order.assert_called_once()
+                self.assertEqual(create_order.call_args.args[0]["amount"], 99900)
+            verify_response = client.post(
+                "/api/verify-payment",
+                json={
+                    "razorpay_order_id": order_id,
+                    "razorpay_payment_id": payment_id,
+                    "razorpay_signature": signature,
+                },
+            )
+            bad_response = client.post(
+                "/api/verify-payment",
+                json={
+                    "razorpay_order_id": order_id,
+                    "razorpay_payment_id": payment_id,
+                    "razorpay_signature": "bad",
+                },
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["order_id"], order_id)
+        self.assertEqual(response.json()["plan"], "pro_byok")
+        self.assertTrue(response.json()["claim_token"].startswith("ap_claim_"))
         self.assertEqual(verify_response.status_code, 200)
         self.assertTrue(verify_response.json()["success"])
+        self.assertTrue(verify_response.json()["license_key"].startswith("ap_live_"))
+        self.assertEqual(verify_response.json()["email"], "paid@example.com")
         self.assertEqual(bad_response.status_code, 400)
+
+    def test_verify_unknown_order_does_not_issue_license(self):
+        try:
+            from fastapi.testclient import TestClient
+        except ImportError:
+            self.skipTest("server dependencies are not installed")
+
+        order_id = "order_missing"
+        payment_id = "pay_test_123"
+        secret = "rzp_test_secret"
+        signature = hmac.new(
+            secret.encode(),
+            f"{order_id}|{payment_id}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "RAZORPAY_KEY_SECRET": secret,
+                "APPLYPILOT_FULFILLMENT_SECRET": "fulfillment-secret-test",
+            },
+        ):
+            client = TestClient(create_app(db_path=Path(tmp) / "saas.sqlite3"))
+            response = client.post(
+                "/api/verify-payment",
+                json={
+                    "razorpay_order_id": order_id,
+                    "razorpay_payment_id": payment_id,
+                    "razorpay_signature": signature,
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unknown Razorpay order", response.json()["detail"])
 
 
 if __name__ == "__main__":
