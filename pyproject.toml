@@ -30,7 +30,7 @@ Repository = "https://github.com/Rishal6/applypilot"
 [project.optional-dependencies]
 ai = ["groq>=0.9", "google-generativeai>=0.7", "openai>=1.30"]
 desktop = ["fastapi>=0.115", "uvicorn[standard]>=0.30"]
-server = ["cryptography>=43", "fastapi>=0.115", "uvicorn[standard]>=0.30"]
+server = ["cryptography>=43", "fastapi>=0.115", "razorpay>=2.0.1", "uvicorn[standard]>=0.30"]
 package = ["nuitka>=2.7", "ordered-set>=4.1", "zstandard>=0.23"]
 dev = ["httpx2>=2.0", "pytest>=8.0"]
 

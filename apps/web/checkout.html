@@ -105,7 +105,15 @@
               <dt>Billing</dt>
               <dd>Monthly</dd>
             </div>
+            <div>
+              <dt>Due now</dt>
+              <dd id="summaryAmount">₹999</dd>
+            </div>
           </dl>
+          <div class="payment-result" id="paymentResult" hidden>
+            <span id="paymentStatus">Payment verified</span>
+            <code id="paymentReference"></code>
+          </div>
           <div class="claim-panel" id="claimPanel">
             <strong>Already paid?</strong>
             <p>Return here after checkout to retrieve your desktop license.</p>
@@ -121,6 +129,7 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script src="./checkout.js"></script>
   </body>
 </html>

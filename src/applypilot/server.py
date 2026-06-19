@@ -5,6 +5,13 @@ from typing import Any
 
 from .billing import BillingService, CheckoutRequest
 from .config import workspace_path
+from .razorpay_standard import (
+    RazorpayApiError,
+    RazorpayAuthenticationError,
+    RazorpayConfigurationError,
+    create_standard_order,
+    verify_standard_payment,
+)
 from .saas_store import SaasStore, default_saas_db
 
 
@@ -119,6 +126,28 @@ def create_app(db_path: str | Path | None = None, web_dir: str | Path | None = N
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post("/api/create-order")
+    async def create_razorpay_standard_order(request: Request) -> dict[str, Any]:
+        body = await request.json()
+        try:
+            return create_standard_order(body)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (RazorpayConfigurationError, RazorpayAuthenticationError) as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except RazorpayApiError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.post("/api/verify-payment")
+    async def verify_razorpay_standard_payment(request: Request) -> dict[str, Any]:
+        body = await request.json()
+        try:
+            return verify_standard_payment(body)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/v1/webhooks/stripe")
     async def stripe_webhook(request: Request) -> dict[str, Any]:
