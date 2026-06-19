@@ -17,6 +17,7 @@ const state = {
   onboardingStep: "",
   profileSave: Promise.resolve(),
   providerStatus: null,
+  lastResumeDraft: null,
 };
 
 const onboardingSteps = [
@@ -51,6 +52,133 @@ const onboardingSteps = [
     placeholder: "you@example.com or skip",
   },
 ];
+
+const ATS_STOPWORDS = new Set([
+  "about",
+  "above",
+  "across",
+  "after",
+  "again",
+  "against",
+  "also",
+  "and",
+  "apply",
+  "based",
+  "before",
+  "being",
+  "build",
+  "business",
+  "candidate",
+  "company",
+  "degree",
+  "description",
+  "develop",
+  "employee",
+  "engineer",
+  "engineering",
+  "experience",
+  "full",
+  "have",
+  "help",
+  "hiring",
+  "including",
+  "india",
+  "knowledge",
+  "looking",
+  "manager",
+  "minimum",
+  "must",
+  "onsite",
+  "preferred",
+  "requirements",
+  "responsibilities",
+  "role",
+  "should",
+  "skills",
+  "team",
+  "their",
+  "this",
+  "through",
+  "using",
+  "with",
+  "work",
+  "years",
+  "your",
+]);
+
+const COMMON_ATS_TERMS = [
+  "Python",
+  "JavaScript",
+  "TypeScript",
+  "Java",
+  "Go",
+  "Golang",
+  "C++",
+  "C#",
+  "SQL",
+  "NoSQL",
+  "PostgreSQL",
+  "MySQL",
+  "MongoDB",
+  "Redis",
+  "FastAPI",
+  "Django",
+  "Flask",
+  "React",
+  "Next.js",
+  "Node.js",
+  "Express",
+  "REST API",
+  "GraphQL",
+  "AWS",
+  "Azure",
+  "GCP",
+  "Docker",
+  "Kubernetes",
+  "Terraform",
+  "CI/CD",
+  "GitHub Actions",
+  "Linux",
+  "Machine Learning",
+  "ML",
+  "AI",
+  "GenAI",
+  "LLM",
+  "RAG",
+  "LangChain",
+  "LangGraph",
+  "Vector DB",
+  "Pinecone",
+  "FAISS",
+  "OpenAI",
+  "Gemini",
+  "Ollama",
+  "MCP",
+  "Prompt Engineering",
+  "Data Analysis",
+  "Excel",
+  "Power BI",
+  "Tableau",
+  "ETL",
+  "Airflow",
+  "MLOps",
+  "API",
+  "Backend",
+  "Frontend",
+  "Full Stack",
+  "Automation",
+  "Testing",
+  "QA",
+  "Simulation",
+  "Robotics",
+  "CAD",
+  "FEA",
+  "Ansys",
+  "SolidWorks",
+  "MATLAB",
+];
+
+const ATS_CANONICAL = new Map(COMMON_ATS_TERMS.map((term) => [term.toLowerCase(), term]));
 
 const elements = {
   accountPlan: document.getElementById("accountPlan"),
@@ -188,6 +316,11 @@ function welcomeMessage() {
         <strong>Set up AI</strong>
         <small>Use local Ollama, BYOK APIs, or managed preview.</small>
       </button>
+      <button type="button" data-action="leads">
+        <span>06</span>
+        <strong>Find referral leads</strong>
+        <small>Discover hiring contacts and draft outreach.</small>
+      </button>
     </div>
   `;
 }
@@ -213,6 +346,10 @@ function handleUserMessage(rawMessage) {
   }
   if (/\b(resume|cv)\b/.test(normalized)) {
     showResume();
+    return;
+  }
+  if (/\b(lead|leads|referral|referrals|hiring manager|recruiter|outreach|prospect|prospects)\b/.test(normalized)) {
+    showLeadGeneration();
     return;
   }
   if (/\b(why|explain)\b/.test(normalized)) {
@@ -260,6 +397,7 @@ function handleUserMessage(rawMessage) {
     <div class="inline-actions">
       <button type="button" data-action="onboard">Tell you about me</button>
       <button type="button" data-action="jobs">Show job matches</button>
+      <button type="button" data-action="leads">Find referral leads</button>
       <button type="button" data-action="status">Check activity</button>
     </div>
   `);
@@ -333,6 +471,11 @@ function showResume() {
     `);
     return;
   }
+  const resumeText = generateResume();
+  state.lastResumeDraft = {
+    text: resumeText,
+    filename: `${slugify(state.profile.name || "candidate")}-resume-draft.md`,
+  };
   addAssistantMessage(`
     <p>Here’s the resume structure I can produce from your current profile.</p>
     <div class="resume-preview">
@@ -343,7 +486,7 @@ function showResume() {
         </div>
         <span>${profileCompletion()}% profile</span>
       </div>
-      <pre>${escapeHtml(generateResume())}</pre>
+      <pre>${escapeHtml(resumeText)}</pre>
       <div class="inline-actions">
         <button type="button" data-action="download-resume">Download .md</button>
         <button type="button" data-action="copy-resume">Copy resume</button>
@@ -391,6 +534,7 @@ function showJobs() {
     <div class="inline-actions">
       <button type="button" data-action="apply">Prepare an application run</button>
       <button type="button" data-action="resume">Tailor my foundation</button>
+      <button type="button" data-action="leads">Find referral leads</button>
       ${state.desktop ? `<button type="button" data-action="score-jobs">Rescore with my profile</button>` : ""}
     </div>
   `);
@@ -556,6 +700,65 @@ function showApplyConfirmation() {
   `);
 }
 
+function showLeadGeneration() {
+  if (profileCompletion() < 35) {
+    addAssistantMessage(`
+      <p>I can find referral and hiring-manager leads, but first I need a target role and some background so the outreach is relevant.</p>
+      <div class="inline-actions">
+        <button type="button" data-action="onboard">Build my profile</button>
+      </div>
+    `);
+    return;
+  }
+
+  if (!state.desktop) {
+    addAssistantMessage(`
+      <p>Lead generation runs from the customer's desktop app. It uses the saved profile to search for relevant recruiters, hiring managers, and referral paths, then stores leads locally with draft outreach.</p>
+      <div class="ai-choice-grid">
+        <article>
+          <strong>Inputs</strong>
+          <p>Target role, skills, location, and profile facts.</p>
+        </article>
+        <article>
+          <strong>Outputs</strong>
+          <p>Lead list, profile URLs or emails when found, and personalized outreach drafts.</p>
+        </article>
+        <article>
+          <strong>Control</strong>
+          <p>No messages are sent automatically. It prepares leads for review.</p>
+        </article>
+      </div>
+      <div class="inline-actions">
+        <button type="button" data-action="open-desktop">Open desktop app</button>
+        <a class="inline-link" href="./checkout.html">Choose a plan</a>
+      </div>
+    `);
+    return;
+  }
+
+  const searchPlan = state.data?.search_plan || [];
+  addAssistantMessage(`
+    <p>I can run lead generation locally now. This does not submit applications or send outreach; it prepares leads and drafts for you to review.</p>
+    <div class="confirmation-card">
+      <div class="confirmation-title">
+        <span aria-hidden="true">↗</span>
+        <div>
+          <strong>Referral lead generation</strong>
+          <small>Local profile-driven search</small>
+        </div>
+      </div>
+      <dl>
+        <div><dt>Target</dt><dd>${escapeHtml(state.profile.target || "From profile")}</dd></div>
+        <div><dt>Location</dt><dd>${escapeHtml(state.profile.location || "Flexible")}</dd></div>
+        <div><dt>Searches</dt><dd>${formatNumber(searchPlan.length || 1)}</dd></div>
+        <div><dt>Outreach</dt><dd>Draft only</dd></div>
+      </dl>
+      <div class="confirmation-warning">Keep Chrome logged in. ApplyPilot saves leads locally and will not contact anyone automatically.</div>
+      <button class="confirm-action-button" type="button" data-action="confirm-leads">Start lead generation</button>
+    </div>
+  `);
+}
+
 function showProfileSummary() {
   if (profileCompletion() === 0) {
     startOnboarding();
@@ -591,6 +794,9 @@ function jobCard(job, index) {
         <span>${escapeHtml(job.company || "Unknown company")} · ${escapeHtml(job.location || formatLabel(job.source || "Job source"))}</span>
         <h3>${escapeHtml(cleanTitle(job.title))}</h3>
         <p>${escapeHtml(job.reason || "Scored against the current candidate profile.")}</p>
+        <div class="job-card-actions">
+          <button type="button" data-action="tailor-resume" data-job-id="${escapeAttr(job.id || "")}" data-job-index="${index}">Tailor ATS resume</button>
+        </div>
       </div>
       <div class="job-score">${number(job.score)}</div>
     </article>
@@ -727,6 +933,124 @@ function generateResume() {
   ].join("\n");
 }
 
+function generateTailoredResume(job) {
+  const profile = state.profile;
+  const contact = [profile.email, profile.location].filter(Boolean).join(" · ");
+  const title = cleanTitle(job?.title || profile.target || "[Target role]");
+  const company = job?.company || "[Company]";
+  const location = job?.location || "[Location]";
+  const jobKeywords = extractAtsKeywords(jobDescriptionText(job));
+  const supported = supportedAtsKeywords(profile, jobKeywords);
+  const missing = jobKeywords.filter(
+    (keyword) => !supported.some((item) => item.toLowerCase() === keyword.toLowerCase()),
+  );
+  const skills = dedupeStrings([...(profile.skills || []), ...supported]);
+  const backgroundLines = sentenceList(profile.background || "");
+  const summaryTerms = supported.slice(0, 5).join(", ");
+  const summary = summaryTerms
+    ? `Candidate targeting ${profile.target || title}, aligned to ${title}. Relevant evidence includes ${summaryTerms}.`
+    : `Candidate targeting ${profile.target || title}, aligned to ${title}. Add more profile facts to strengthen JD alignment.`;
+
+  return [
+    `# ${profile.name || "[Your Name]"}`,
+    contact || "[Email] · [Location]",
+    "",
+    `## Targeted Resume — ${title}`,
+    "",
+    "## ATS Target",
+    `- Role: ${title}`,
+    `- Company: ${company}`,
+    `- Location: ${location}`,
+    "",
+    "## Professional Summary",
+    summary,
+    "",
+    "## Relevant Skills",
+    skills.join(" · ") || "[Add skills relevant to this JD]",
+    "",
+    "## Experience, Projects & Education",
+    ...(backgroundLines.length
+      ? backgroundLines.map((line) => `- ${line}`)
+      : ["- [Add relevant work, projects, education, and measurable outcomes]"]),
+    "",
+    "## JD Keyword Alignment",
+    `- Supported by profile: ${supported.join(", ") || "No JD-specific keywords are clearly evidenced yet."}`,
+    `- Missing or not evidenced yet: ${missing.slice(0, 12).join(", ") || "None from the extracted JD terms."}`,
+    "",
+    "## Preferences",
+    `- Preferred location/work style: ${profile.location || "[Add preference]"}`,
+    "",
+    "---",
+    "Tailored by ApplyPilot from candidate-provided facts and the selected JD. Remove review notes and add only true, evidenced details before submitting.",
+  ].join("\n");
+}
+
+async function tailorResumeForJob(jobId, jobIndex) {
+  if (profileCompletion() < 45) {
+    addAssistantMessage(`
+      <p>I can tailor a JD-specific ATS resume, but I need your target, background, and skills first.</p>
+      <div class="inline-actions">
+        <button type="button" data-action="onboard">Build my profile</button>
+      </div>
+    `);
+    return;
+  }
+
+  const job = findJobForAction(jobId, jobIndex);
+  if (!job) {
+    addAssistantMessage(`
+      <p>I need a selected job before I can tailor the resume.</p>
+      <div class="inline-actions">
+        <button type="button" data-action="jobs">Show job matches</button>
+      </div>
+    `);
+    return;
+  }
+
+  let resumeText = "";
+  if (state.desktop) {
+    try {
+      const body = job.id ? { job_id: job.id } : { job };
+      const response = await fetch("/api/resume/tailor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/markdown" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `HTTP ${response.status}`);
+      }
+      resumeText = await response.text();
+    } catch (error) {
+      resumeText = generateTailoredResume(job);
+      showToast(`Used browser fallback: ${error.message}`);
+    }
+  } else {
+    resumeText = generateTailoredResume(job);
+  }
+
+  const filename = `${slugify(state.profile.name || "candidate")}-${slugify(cleanTitle(job.title || "job"))}-tailored-resume.md`;
+  state.lastResumeDraft = { text: resumeText, filename };
+  addAssistantMessage(`
+    <p>Here’s the ATS-tailored draft for <strong>${escapeHtml(cleanTitle(job.title))}</strong>${job.company ? ` at ${escapeHtml(job.company)}` : ""}. I included only profile-supported keywords and called out gaps separately.</p>
+    <div class="resume-preview">
+      <div class="resume-preview-header">
+        <div>
+          <span>Tailored resume</span>
+          <strong>${escapeHtml(cleanTitle(job.title))}</strong>
+        </div>
+        <span>ATS safe</span>
+      </div>
+      <pre>${escapeHtml(resumeText)}</pre>
+      <div class="inline-actions">
+        <button type="button" data-action="download-tailored-resume">Download .md</button>
+        <button type="button" data-action="copy-tailored-resume">Copy tailored resume</button>
+        <button type="button" data-action="onboard">Improve profile</button>
+      </div>
+    </div>
+  `);
+}
+
 async function downloadResume() {
   if (state.desktop) {
     const response = await fetch("/api/resume", { cache: "no-store" });
@@ -744,6 +1068,16 @@ async function downloadResume() {
   showToast("Resume draft downloaded");
 }
 
+function downloadTailoredResume() {
+  if (!state.lastResumeDraft?.text) {
+    showToast("Tailor a resume for a job first");
+    return;
+  }
+  const blob = new Blob([state.lastResumeDraft.text], { type: "text/markdown;charset=utf-8" });
+  downloadBlob(blob, state.lastResumeDraft.filename || "applypilot-tailored-resume.md");
+  showToast("Tailored resume downloaded");
+}
+
 function downloadBlob(blob, filename) {
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
@@ -759,6 +1093,15 @@ async function copyResume() {
   showToast("Resume copied");
 }
 
+async function copyTailoredResume() {
+  if (!state.lastResumeDraft?.text) {
+    showToast("Tailor a resume for a job first");
+    return;
+  }
+  await navigator.clipboard.writeText(state.lastResumeDraft.text);
+  showToast("Tailored resume copied");
+}
+
 function rankedJobs() {
   const roleWords = titleWords(state.profile.target || "");
   return [...state.jobs].sort((a, b) => {
@@ -768,20 +1111,34 @@ function rankedJobs() {
   });
 }
 
-function handleAction(action) {
+function findJobForAction(jobId, jobIndex) {
+  const jobs = rankedJobs();
+  const byId = jobs.find((job) => String(job.id || "") === String(jobId || ""));
+  if (byId) return byId;
+  const index = Number(jobIndex);
+  if (Number.isInteger(index) && jobs[index]) return jobs[index];
+  return jobs[0] || null;
+}
+
+function handleAction(action, target) {
   if (action === "onboard" || action === "profile") startOnboarding();
   if (action === "resume") showResume();
   if (action === "jobs") showJobs();
   if (action === "status") showStatus();
   if (action === "ai-setup") showAISetup();
   if (action === "apply") showApplyConfirmation();
+  if (action === "leads") showLeadGeneration();
+  if (action === "tailor-resume") tailorResumeForJob(target?.dataset.jobId, target?.dataset.jobIndex);
   if (action === "download-resume") downloadResume();
   if (action === "copy-resume") copyResume();
+  if (action === "download-tailored-resume") downloadTailoredResume();
+  if (action === "copy-tailored-resume") copyTailoredResume();
   if (action === "connect") openConnectModal();
   if (action === "score-jobs") scoreJobs();
   if (action === "search-jobs") startDesktopSearch();
   if (action === "enable-auto-submit") enableAutoSubmit();
   if (action === "confirm-run") startDesktopRun();
+  if (action === "confirm-leads") startLeadGeneration();
   if (action === "stop-run") stopDesktopRun();
   if (action === "open-desktop") {
     window.open("http://127.0.0.1:8765", "_blank", "noopener");
@@ -1076,6 +1433,28 @@ async function startDesktopSearch() {
   await loadDashboard();
 }
 
+async function startLeadGeneration() {
+  if (!requireDesktopActivation()) return;
+  const response = await fetch("/api/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ mode: "leads", confirmed: false }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    showToast(data.detail || `HTTP ${response.status}`);
+    return;
+  }
+  addAssistantMessage(`
+    <p><strong>Lead generation started.</strong> ApplyPilot will use your profile to find relevant referral and hiring contacts, then save leads and outreach drafts locally for review.</p>
+    <div class="inline-actions">
+      <button type="button" data-action="status">Show live status</button>
+      <button type="button" data-action="stop-run">Stop lead search</button>
+    </div>
+  `);
+  await loadDashboard();
+}
+
 async function enableAutoSubmit() {
   if (!requireDesktopActivation()) return;
   const current = state.data?.policy || {};
@@ -1177,6 +1556,70 @@ function sentenceList(value) {
     .map((item) => item.replace(/^[-•]\s*/, "").trim())
     .filter(Boolean)
     .slice(0, 10);
+}
+
+function jobDescriptionText(job) {
+  return [job?.title, job?.description]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function extractAtsKeywords(text) {
+  const source = String(text || "");
+  const candidates = [];
+  COMMON_ATS_TERMS.forEach((term) => {
+    if (keywordInText(term, source)) candidates.push(term);
+  });
+  source.match(/\b[A-Za-z][A-Za-z0-9+#.]{2,}\b/g)?.forEach((token) => {
+    const normalized = normalizeAtsKeyword(token);
+    if (!ATS_STOPWORDS.has(normalized.toLowerCase())) candidates.push(normalized);
+  });
+  return dedupeStrings(candidates).slice(0, 30);
+}
+
+function keywordInText(keyword, text) {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^A-Za-z0-9+#.])${escaped}($|[^A-Za-z0-9+#.])`, "i").test(text);
+}
+
+function normalizeAtsKeyword(value) {
+  const token = String(value || "").replace(/^[.,;:()[\]{}]+|[.,;:()[\]{}]+$/g, "");
+  const canonical = ATS_CANONICAL.get(token.toLowerCase());
+  if (canonical) return canonical;
+  if (token.toUpperCase() === token || /[A-Z]/.test(token.slice(1))) return token;
+  return token
+    .replaceAll("_", " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+function supportedAtsKeywords(profile, keywords) {
+  const evidence = [
+    profile.target,
+    profile.background,
+    profile.location,
+    ...(profile.skills || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return dedupeStrings(keywords.filter((keyword) => evidence.includes(keyword.toLowerCase()))).slice(0, 18);
+}
+
+function dedupeStrings(values) {
+  const seen = new Set();
+  const output = [];
+  values
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .forEach((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      output.push(value);
+    });
+  return output;
 }
 
 function titleWords(value) {
@@ -1426,7 +1869,7 @@ elements.chatInput.addEventListener("keydown", (event) => {
 document.addEventListener("click", (event) => {
   const actionTarget = event.target.closest("[data-action]");
   if (actionTarget) {
-    handleAction(actionTarget.dataset.action);
+    handleAction(actionTarget.dataset.action, actionTarget);
     return;
   }
   const promptTarget = event.target.closest("[data-prompt]");

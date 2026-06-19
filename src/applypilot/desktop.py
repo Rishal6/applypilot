@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .career import load_career_profile, resume_markdown, save_career_profile
+from .career import (
+    load_career_profile,
+    resume_markdown,
+    save_career_profile,
+    tailored_resume_markdown,
+)
 from .config import workspace_path, write_default_workspace
 from .dashboard import build_dashboard_data
 from .policy import load_policy, update_policy
@@ -91,6 +96,9 @@ class DesktopController:
 
     def resume(self) -> str:
         return resume_markdown(self.career_profile())
+
+    def tailored_resume(self, job: dict[str, Any]) -> str:
+        return tailored_resume_markdown(self.career_profile(), job)
 
     def dashboard(self) -> dict[str, Any]:
         load_local_provider_env(self.workspace)
@@ -271,6 +279,29 @@ def create_desktop_app(workspace: Path):
             controller.resume(),
             media_type="text/markdown",
             headers={"Content-Disposition": 'attachment; filename="applypilot-resume-draft.md"'},
+        )
+
+    @app.post("/api/resume/tailor")
+    async def tailor_resume(request: Request) -> PlainTextResponse:
+        require_local_origin(request)
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
+
+        job = body.get("job")
+        job_id = str(body.get("job_id") or "").strip()
+        if job is None and job_id:
+            match = next((item for item in Store(workspace).load_jobs() if item.id == job_id), None)
+            if match is None:
+                raise HTTPException(status_code=404, detail="Job not found.")
+            job = match.to_dict()
+        if not isinstance(job, dict):
+            raise HTTPException(status_code=400, detail="Provide a job object or job_id.")
+
+        return PlainTextResponse(
+            controller.tailored_resume(job),
+            media_type="text/markdown",
+            headers={"Content-Disposition": 'attachment; filename="applypilot-tailored-resume.md"'},
         )
 
     @app.get("/api/dashboard")

@@ -2072,6 +2072,25 @@ td strong {
   white-space: nowrap;
 }
 
+.job-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.job-card-actions button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #d7e2dc;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #315044;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .job-score {
   width: 38px;
   height: 38px;

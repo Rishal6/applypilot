@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from applypilot.career import load_career_profile, resume_markdown, save_career_profile
+from applypilot.career import load_career_profile, resume_markdown, save_career_profile, tailored_resume_markdown
 
 
 class CareerProfileTest(unittest.TestCase):
@@ -44,6 +44,31 @@ class CareerProfileTest(unittest.TestCase):
         self.assertEqual(profile["skills"], ["Excel", "SQL"])
         self.assertIn("Built a sales dashboard.", resume)
         self.assertNotIn("Acme", resume)
+
+    def test_tailors_resume_to_jd_without_inventing_missing_skills(self):
+        profile = {
+            "name": "Candidate",
+            "target": "Python Backend Developer",
+            "background": "Built FastAPI services for internal workflow automation.",
+            "skills": ["Python", "FastAPI", "SQL"],
+            "location": "Remote",
+        }
+        job = {
+            "title": "Backend Engineer",
+            "company": "Acme",
+            "location": "Remote",
+            "description": "Build Python FastAPI APIs on Kubernetes and AWS.",
+        }
+
+        resume = tailored_resume_markdown(profile, job)
+
+        self.assertIn("ATS Target", resume)
+        self.assertIn("Backend Engineer", resume)
+        self.assertIn("FastAPI", resume)
+        self.assertIn("Python", resume)
+        self.assertIn("Missing or not evidenced", resume)
+        self.assertIn("Kubernetes", resume)
+        self.assertNotIn("Worked at Acme", resume)
 
 
 if __name__ == "__main__":

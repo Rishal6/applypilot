@@ -45,6 +45,11 @@ class DesktopApiTest(unittest.TestCase):
             dashboard = client.get("/api/dashboard")
             search_plan = client.get("/api/search-plan")
             resume = client.get("/api/resume")
+            tailored_resume = client.post(
+                "/api/resume/tailor",
+                headers={"Origin": "http://127.0.0.1:8765"},
+                json={"job_id": "1"},
+            )
             policy = client.post(
                 "/api/policy",
                 headers={"Origin": "http://127.0.0.1:8765"},
@@ -63,6 +68,10 @@ class DesktopApiTest(unittest.TestCase):
         self.assertGreater(dashboard.json()["jobs"][0]["score"], 0)
         self.assertEqual(search_plan.json()["queries"][0]["keyword"], "Python Backend Developer")
         self.assertIn("Built FastAPI services.", resume.text)
+        self.assertEqual(tailored_resume.status_code, 200)
+        self.assertIn("ATS Target", tailored_resume.text)
+        self.assertIn("Python Backend Developer", tailored_resume.text)
+        self.assertIn("FastAPI", tailored_resume.text)
         self.assertEqual(policy.status_code, 200)
         self.assertEqual(policy.json()["mode"], "auto-submit")
         self.assertEqual(policy.json()["max_applications_per_day"], 12)
