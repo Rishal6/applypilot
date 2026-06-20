@@ -267,8 +267,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Profile viewers found: {summary['profile_viewers_found']}")
         print(f"  Connection drafts: {summary.get('connection_drafts', 0)}")
         print(f"  InMail drafts: {summary.get('inmail_drafts', 0)}")
-        print("  Connections sent: 0 (manual review required)")
-        print("  InMails sent: 0 (manual review required)")
+        print("  Connections sent: 0 (draft-only feature)")
+        print("  InMails sent: 0 (draft-only feature)")
         print(f"  Naukri activity: {summary['naukri_activity']}")
         page.context.browser.close()
         return 0

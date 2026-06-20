@@ -16,11 +16,8 @@ You are filling a job application form for this candidate.
 CANDIDATE PROFILE:
 {profile_text}
 
-Additional facts:
-- Available to start: Immediately
-- Willing to relocate: Yes
-- Work authorization in India: Yes
-- Visa sponsorship needed: No
+Use only the candidate-provided facts above. Do not invent relocation,
+authorization, salary, notice period, experience, or sponsorship answers.
 
 Question: {question}
 {options_line}

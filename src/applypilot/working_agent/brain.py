@@ -5,9 +5,10 @@ import os
 import re
 
 from ..config import load_preferences
+from ..career import load_profile_answers
 from ..form_filler import AIFormFiller, load_profile
 from ..models import Job
-from ..policy import load_config, load_policy
+from ..policy import load_policy
 from ..providers import get_provider
 from ..providers.rules import RulesProvider
 from .runtime import workspace
@@ -117,7 +118,4 @@ def _fallback_option(options: list[str] | None = None) -> str:
 
 
 def _profile_answers() -> dict[str, str]:
-    raw = load_config(workspace()).get("profile_answers") or {}
-    if not isinstance(raw, dict):
-        return {}
-    return {str(key): str(value or "") for key, value in raw.items()}
+    return load_profile_answers(workspace())

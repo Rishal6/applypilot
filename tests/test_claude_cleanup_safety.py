@@ -133,10 +133,33 @@ class ClaudeCleanupSafetyTest(unittest.TestCase):
             url = searcher._build_url("Simulation Engineer")
             queries = searcher._profile_queries()
 
-        self.assertEqual(connector._chatbot_answers, {})
+        self.assertNotIn("current ctc", connector._chatbot_answers)
+        self.assertNotIn("expected ctc", connector._chatbot_answers)
+        self.assertNotIn("experience", connector._chatbot_answers)
         self.assertIn("Simulation Engineer", queries)
         self.assertIn("k=Simulation+Engineer", url)
         self.assertNotIn("experience=3", url)
+
+    def test_naukri_reuses_saved_application_answers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / ".applypilot"
+            save_career_profile(workspace, {
+                "name": "Jane Doe",
+                "target": "Simulation Engineer",
+                "skills": ["Ansys"],
+                "yearsExperience": "4",
+                "noticePeriod": "30 days",
+                "currentCtc": "8 LPA",
+                "expectedCtc": "14 LPA",
+                "willingToRelocate": "No",
+            })
+            connector = NaukriBrowserConnector(workspace)
+
+        self.assertEqual(connector._chatbot_answers["experience"], "4")
+        self.assertEqual(connector._chatbot_answers["notice period"], "30 days")
+        self.assertEqual(connector._chatbot_answers["current ctc"], "8 LPA")
+        self.assertEqual(connector._chatbot_answers["expected ctc"], "14 LPA")
+        self.assertEqual(connector._chatbot_answers["relocate"], "No")
 
 
 if __name__ == "__main__":

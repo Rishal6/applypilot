@@ -161,7 +161,7 @@ class DesktopController:
         )
         return policy.to_dict()
 
-    def run(self, mode: str, confirmed: bool) -> dict[str, Any]:
+    def run(self, mode: str, confirmed: bool = False) -> dict[str, Any]:
         if mode not in {"linkedin", "naukri", "leads", "apply", "all", "search"}:
             raise ValueError("Invalid agent mode.")
         auth = load_auth(self.workspace)
@@ -171,8 +171,6 @@ class DesktopController:
         application_mode = mode in {"linkedin", "naukri", "apply", "all"}
         if application_mode and policy.mode != "auto-submit":
             raise PermissionError("Set policy mode to auto-submit before running application modes.")
-        if application_mode and not confirmed:
-            raise PermissionError("Confirm auto-submit before starting the agent.")
         with self.lock:
             if self.process is not None and self.process.poll() is None:
                 raise RuntimeError("The desktop agent is already running.")

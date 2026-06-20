@@ -20,6 +20,90 @@ PROFILE_FIELDS = {
     "resume_status",
 }
 
+PROFILE_ANSWER_FIELDS = {
+    "first_name",
+    "last_name",
+    "email",
+    "phone",
+    "city",
+    "linkedin_url",
+    "website",
+    "years_experience",
+    "authorized_to_work",
+    "sponsorship_needed",
+    "willing_to_relocate",
+    "notice_period",
+    "current_ctc",
+    "expected_ctc",
+    "career_break",
+    "disability",
+    "gender",
+    "current_company",
+    "current_title",
+    "highest_education",
+}
+
+PROFILE_ANSWER_ALIASES = {
+    "firstName": "first_name",
+    "lastName": "last_name",
+    "linkedinUrl": "linkedin_url",
+    "yearsExperience": "years_experience",
+    "experience": "years_experience",
+    "authorizedToWork": "authorized_to_work",
+    "workAuthorization": "authorized_to_work",
+    "sponsorshipNeeded": "sponsorship_needed",
+    "visaSponsorship": "sponsorship_needed",
+    "willingToRelocate": "willing_to_relocate",
+    "relocate": "willing_to_relocate",
+    "noticePeriod": "notice_period",
+    "currentCtc": "current_ctc",
+    "currentCTC": "current_ctc",
+    "currentSalary": "current_ctc",
+    "expectedCtc": "expected_ctc",
+    "expectedCTC": "expected_ctc",
+    "expectedSalary": "expected_ctc",
+    "careerBreak": "career_break",
+    "currentCompany": "current_company",
+    "currentTitle": "current_title",
+    "highestEducation": "highest_education",
+}
+
+DEFAULT_PROFILE_ANSWERS = {
+    "first_name": "",
+    "last_name": "",
+    "email": "",
+    "phone": "",
+    "city": "",
+    "linkedin_url": "",
+    "website": "",
+    "years_experience": "",
+    "authorized_to_work": "Yes",
+    "sponsorship_needed": "No",
+    "willing_to_relocate": "Yes",
+    "notice_period": "",
+    "current_ctc": "",
+    "expected_ctc": "",
+    "career_break": "",
+    "disability": "",
+    "gender": "",
+    "current_company": "",
+    "current_title": "",
+    "highest_education": "",
+}
+
+NAUKRI_ANSWER_MAP = {
+    "career break": "career_break",
+    "based out": "willing_to_relocate",
+    "relocate": "willing_to_relocate",
+    "notice period": "notice_period",
+    "current ctc": "current_ctc",
+    "expected ctc": "expected_ctc",
+    "experience": "years_experience",
+    "years": "years_experience",
+    "gender": "gender",
+    "disability": "disability",
+}
+
 
 ATS_STOPWORDS = {
     "about",
@@ -162,6 +246,7 @@ def default_career_profile() -> dict[str, Any]:
         "linkedin_url": "",
         "website": "",
         "resume_status": "",
+        "application_answers": dict(DEFAULT_PROFILE_ANSWERS),
     }
 
 
@@ -183,6 +268,7 @@ def load_career_profile(workspace: Path) -> dict[str, Any]:
     profile["location"] = profile["location"] or str(answers.get("city") or "")
     profile["linkedin_url"] = profile["linkedin_url"] or str(answers.get("linkedin_url") or "")
     profile["website"] = profile["website"] or str(answers.get("website") or "")
+    profile["application_answers"] = normalize_profile_answers(answers)
     return profile
 
 
@@ -190,9 +276,11 @@ def save_career_profile(workspace: Path, raw: dict[str, Any]) -> dict[str, Any]:
     write_default_workspace(workspace)
     profile = normalize_career_profile(raw)
     config = load_config(workspace)
+    answers = merge_profile_answers(config.get("profile_answers") or {}, profile, raw)
+    profile["application_answers"] = answers
     config["career_profile"] = profile
     config["preferences"] = merge_preferences(config.get("preferences") or {}, profile)
-    config["profile_answers"] = merge_profile_answers(config.get("profile_answers") or {}, profile)
+    config["profile_answers"] = answers
     write_config(workspace, config)
     (workspace / "profile.md").write_text(profile_markdown(profile), encoding="utf-8")
     return profile
@@ -226,6 +314,7 @@ def profile_markdown(profile: dict[str, Any]) -> str:
         if item
     )
     skills = ", ".join(profile["skills"]) or "[Skills not provided]"
+    answers = application_answer_lines(profile.get("application_answers") or {})
     return "\n".join([
         "# Candidate Profile",
         "",
@@ -243,6 +332,9 @@ def profile_markdown(profile: dict[str, Any]) -> str:
         "",
         "## Work Preference",
         profile["location"] or "[Location or remote preference not provided]",
+        "",
+        "## Saved Application Answers",
+        *(answers or ["[No reusable application answers saved yet]"]),
         "",
         "> This profile contains candidate-provided facts. Do not invent employers, dates, qualifications, or achievements.",
         "",
@@ -448,10 +540,10 @@ def merge_preferences(current: dict[str, Any], profile: dict[str, Any]) -> dict[
     return updated
 
 
-def merge_profile_answers(current: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
-    updated = dict(current)
+def merge_profile_answers(current: dict[str, Any], profile: dict[str, Any], raw: dict[str, Any] | None = None) -> dict[str, Any]:
+    updated = normalize_profile_answers(current)
     first_name, last_name = split_name(profile["name"])
-    updated.update({
+    derived = {
         "first_name": first_name,
         "last_name": last_name,
         "email": profile["email"],
@@ -459,8 +551,90 @@ def merge_profile_answers(current: dict[str, Any], profile: dict[str, Any]) -> d
         "city": profile["location"],
         "linkedin_url": profile["linkedin_url"],
         "website": profile["website"],
-    })
+    }
+    for key, value in derived.items():
+        if value:
+            updated[key] = value
+
+    provided = extract_profile_answers(profile)
+    provided.update(extract_profile_answers(raw if isinstance(raw, dict) else {}))
+    for key, value in provided.items():
+        if value != "":
+            updated[key] = value
     return updated
+
+
+def load_profile_answers(workspace: Path) -> dict[str, str]:
+    write_default_workspace(workspace)
+    return normalize_profile_answers(load_config(workspace).get("profile_answers") or {})
+
+
+def normalize_profile_answers(raw: dict[str, Any] | None) -> dict[str, str]:
+    raw = raw or {}
+    answers = {key: str(value or "") for key, value in DEFAULT_PROFILE_ANSWERS.items()}
+    if not isinstance(raw, dict):
+        return answers
+
+    for key, value in raw.items():
+        normalized_key = PROFILE_ANSWER_ALIASES.get(str(key), str(key))
+        if normalized_key in PROFILE_ANSWER_FIELDS or normalized_key.startswith("custom_"):
+            answers[normalized_key] = clean_text(value, limit=500)
+    return answers
+
+
+def extract_profile_answers(raw: dict[str, Any]) -> dict[str, str]:
+    values: dict[str, Any] = {}
+    for nested_key in ["application_answers", "profile_answers", "answers"]:
+        nested = raw.get(nested_key)
+        if isinstance(nested, dict):
+            values.update(nested)
+    for key in [*PROFILE_ANSWER_FIELDS, *PROFILE_ANSWER_ALIASES]:
+        if key in raw:
+            values[key] = raw[key]
+    return {
+        key: value
+        for key, value in normalize_profile_answers(values).items()
+        if str(value or "").strip()
+    }
+
+
+def naukri_chatbot_answers(profile_answers: dict[str, Any], extra: dict[str, Any] | None = None) -> dict[str, str]:
+    answers = normalize_profile_answers(profile_answers)
+    mapped = {
+        question: answers.get(answer_key, "")
+        for question, answer_key in NAUKRI_ANSWER_MAP.items()
+        if answers.get(answer_key, "")
+    }
+    if extra:
+        for key, value in extra.items():
+            cleaned = clean_text(value, limit=500)
+            if cleaned:
+                mapped[str(key)] = cleaned
+    return mapped
+
+
+def application_answer_lines(profile_answers: dict[str, Any]) -> list[str]:
+    answers = normalize_profile_answers(profile_answers)
+    labels = {
+        "years_experience": "Years of experience",
+        "authorized_to_work": "Authorized to work",
+        "sponsorship_needed": "Visa sponsorship needed",
+        "willing_to_relocate": "Willing to relocate",
+        "notice_period": "Notice period",
+        "current_ctc": "Current CTC",
+        "expected_ctc": "Expected CTC",
+        "career_break": "Career break",
+        "disability": "Disability",
+        "gender": "Gender",
+        "current_company": "Current company",
+        "current_title": "Current title",
+        "highest_education": "Highest education",
+    }
+    return [
+        f"- {label}: {answers[key]}"
+        for key, label in labels.items()
+        if answers.get(key)
+    ]
 
 
 def split_target_roles(value: str) -> list[str]:

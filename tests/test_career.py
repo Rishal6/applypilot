@@ -13,10 +13,15 @@ class CareerProfileTest(unittest.TestCase):
             saved = save_career_profile(workspace, {
                 "name": "Rishal V S",
                 "email": "rishal@example.com",
+                "phone": "+91 99900 01111",
                 "target": "AI Engineer and Python Backend Developer",
                 "background": "Built RAG assistants and ERP automation.",
                 "skills": ["Python", "FastAPI", "RAG"],
                 "location": "Remote India or Bengaluru",
+                "yearsExperience": "3",
+                "noticePeriod": "15 days",
+                "currentCtc": "7 LPA",
+                "expectedCtc": "15 LPA",
             })
             config = json.loads((workspace / "config.json").read_text(encoding="utf-8"))
             profile_text = (workspace / "profile.md").read_text(encoding="utf-8")
@@ -25,7 +30,14 @@ class CareerProfileTest(unittest.TestCase):
         self.assertIn("AI Engineer", config["preferences"]["target_roles"])
         self.assertEqual(config["profile_answers"]["first_name"], "Rishal")
         self.assertEqual(config["profile_answers"]["last_name"], "V S")
+        self.assertEqual(config["profile_answers"]["phone"], "+91 99900 01111")
+        self.assertEqual(config["profile_answers"]["years_experience"], "3")
+        self.assertEqual(config["profile_answers"]["notice_period"], "15 days")
+        self.assertEqual(config["profile_answers"]["current_ctc"], "7 LPA")
+        self.assertEqual(config["profile_answers"]["expected_ctc"], "15 LPA")
         self.assertIn("Built RAG assistants", profile_text)
+        self.assertIn("Saved Application Answers", profile_text)
+        self.assertIn("Years of experience: 3", profile_text)
 
     def test_loads_saved_profile_and_builds_truthful_resume(self):
         with tempfile.TemporaryDirectory() as tmp:

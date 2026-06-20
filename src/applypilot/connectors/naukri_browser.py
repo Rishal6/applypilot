@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from ..applications import ApplicationRecord
+from ..career import load_profile_answers, naukri_chatbot_answers
+from ..form_filler import AIFormFiller, load_profile
 from ..human import BETWEEN_JOBS, READING_TIME, human_pause
 from ..models import Evaluation, Job
 from ..policy import AutomationPolicy
@@ -45,6 +47,7 @@ class NaukriBrowserConnector:
         self.workspace = workspace
         self._apply_count = 0
         self._chatbot_answers = self._load_chatbot_answers()
+        self._ai_filler: AIFormFiller | None = None
 
     def apply(self, job: Job, evaluation: Evaluation, policy: AutomationPolicy) -> ApplicationRecord:
         if platform.system() != "Darwin":
@@ -89,11 +92,11 @@ class NaukriBrowserConnector:
             if result == "applied":
                 return self._record(job, evaluation, policy, "applied", "Application submitted.")
             elif result == "no_chatbot":
-                return self._record(job, evaluation, policy, "prepared", "No confirmation detected after Apply; review manually.")
+                return self._record(job, evaluation, policy, "prepared", "No submit confirmation detected after Apply.")
             elif result == "needs_review":
-                return self._record(job, evaluation, policy, "prepared", "Naukri asked an unconfigured question; review manually.")
+                return self._record(job, evaluation, policy, "prepared", "Naukri asked a question without a saved or AI-generated answer.")
             else:
-                return self._record(job, evaluation, policy, "prepared", "Timed out before submit confirmation; review manually.")
+                return self._record(job, evaluation, policy, "prepared", "Timed out before submit confirmation.")
 
         except Exception as exc:
             logger.exception("Naukri Chrome connector failed")
@@ -111,18 +114,21 @@ class NaukriBrowserConnector:
         )
 
     def _load_chatbot_answers(self) -> dict[str, str]:
-        """Load chatbot answers from workspace config, falling back to defaults."""
+        """Load saved profile answers and translate them to Naukri chatbot prompts."""
         config_file = self.workspace / "config.json"
-        if not config_file.exists():
-            return dict(DEFAULT_CHATBOT_ANSWERS)
+        profile_answers = load_profile_answers(self.workspace)
+        extra: dict[str, Any] = {}
         try:
-            with config_file.open() as f:
-                config = json.load(f)
-            answers = dict(DEFAULT_CHATBOT_ANSWERS)
-            answers.update(config.get("naukri_chatbot_answers") or {})
-            return answers
+            if config_file.exists():
+                with config_file.open() as f:
+                    config = json.load(f)
+                configured = config.get("naukri_chatbot_answers") or {}
+                extra = configured if isinstance(configured, dict) else {}
         except (json.JSONDecodeError, OSError):
-            return dict(DEFAULT_CHATBOT_ANSWERS)
+            extra = {}
+        answers = dict(DEFAULT_CHATBOT_ANSWERS)
+        answers.update(naukri_chatbot_answers(profile_answers, extra))
+        return answers
 
     def _navigate(self, url: str) -> None:
         escaped = self._as_applescript_string(url)
@@ -180,6 +186,9 @@ class NaukriBrowserConnector:
                     answer = ans
                     break
 
+            if not answer:
+                answer = self._answer_unknown_chatbot(chatbot_text)
+
             if answer:
                 answer_json = json.dumps(answer)
                 # Click the chip/button with that answer
@@ -206,7 +215,7 @@ class NaukriBrowserConnector:
                 """)
                 logger.info("Chatbot: '%s' -> answered '%s'", chatbot_lower[:50], answer)
             else:
-                logger.info("Chatbot: unknown question in '%s'", chatbot_lower[:50])
+                logger.info("Chatbot: no saved or AI answer for '%s'", chatbot_lower[:50])
                 return "needs_review"
 
             # Click skills chips (click all clickable ones)
@@ -229,6 +238,18 @@ class NaukriBrowserConnector:
         )
         result = self._osascript(script, timeout=timeout)
         return "" if result == "missing value" else result
+
+    def _answer_unknown_chatbot(self, question: str) -> str:
+        try:
+            if self._ai_filler is None:
+                profile_text = load_profile(self.workspace)
+                if not profile_text:
+                    return ""
+                self._ai_filler = AIFormFiller(profile_text)
+            return self._ai_filler.answer(question) or ""
+        except Exception as exc:
+            logger.warning("Naukri AI chatbot answer failed: %s", exc)
+            return ""
 
     def _js_file(self, code: str, timeout: int = 30) -> str:
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as handle:

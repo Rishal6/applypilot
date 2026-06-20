@@ -12,9 +12,9 @@ import re
 import os
 from datetime import datetime
 
-from .brain import evaluate_job
+from .brain import answer_form_question, evaluate_job
 from .runtime import log_file, workspace
-from ..career import load_career_profile
+from ..career import load_career_profile, load_profile_answers, naukri_chatbot_answers
 from ..policy import load_policy
 from ..search_plan import build_search_plan
 
@@ -156,7 +156,7 @@ def click_apply():
 def handle_chatbot():
     """Handle chatbot questions after clicking Apply.
 
-    Stops for manual review when Naukri asks an unconfigured question.
+    Stops only when no saved answer or configured AI answer is available.
     """
     for attempt in range(8):
         human_pause(2, 4)
@@ -190,6 +190,8 @@ def handle_chatbot():
             if keyword in chatbot_lower:
                 answer = ans
                 break
+        if not answer:
+            answer = answer_form_question(chatbot_text)
 
         if answer:
             answer_json = json.dumps(answer)
@@ -218,7 +220,7 @@ def handle_chatbot():
             """)
             log(f"    Chatbot: '{chatbot_lower[:50]}' → answered '{answer}' ({clicked})")
         else:
-            log(f"    Chatbot: unknown question, stopping for manual review: {chatbot_lower[:80]}")
+            log(f"    Chatbot: no saved or AI answer, stopping: {chatbot_lower[:80]}")
             return "needs_review"
 
         # Click skills chips if they appear (click all clickable ones)
@@ -339,30 +341,20 @@ def main():
 
 
 def _profile_answers():
-    path = workspace() / "config.json"
-    if not path.exists():
-        return {}
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    answers = raw.get("profile_answers") or {}
-    return answers if isinstance(answers, dict) else {}
+    return load_profile_answers(workspace())
 
 
 def _chatbot_answers():
-    answers = _profile_answers()
-    return {
-        "career break": answers.get("career_break", ""),
-        "based out": answers.get("willing_to_relocate", ""),
-        "relocate": answers.get("willing_to_relocate", ""),
-        "notice period": answers.get("notice_period", ""),
-        "current ctc": answers.get("current_ctc", ""),
-        "expected ctc": answers.get("expected_ctc", ""),
-        "experience": answers.get("years_experience", ""),
-        "gender": "",
-        "disability": answers.get("disability", ""),
-    }
+    extra = {}
+    path = workspace() / "config.json"
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            configured = raw.get("naukri_chatbot_answers") or {}
+            extra = configured if isinstance(configured, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            extra = {}
+    return naukri_chatbot_answers(_profile_answers(), extra)
 
 
 if __name__ == "__main__":

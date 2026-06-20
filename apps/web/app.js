@@ -51,6 +51,41 @@ const onboardingSteps = [
     question: "What email should employers use? You can type “skip” if you want to add it later.",
     placeholder: "you@example.com or skip",
   },
+  {
+    key: "phone",
+    question: "What phone number should job boards and recruiters use? Type “skip” if you want to add it later.",
+    placeholder: "+91 98765 43210 or skip",
+  },
+  {
+    key: "yearsExperience",
+    question: "How many years of experience should I use on LinkedIn and Naukri forms?",
+    placeholder: "For example: 3",
+  },
+  {
+    key: "noticePeriod",
+    question: "What notice period should I save for job forms?",
+    placeholder: "Immediate, 15 days, 30 days…",
+  },
+  {
+    key: "currentCtc",
+    question: "For Naukri, what current CTC should I save? Type “skip” if you don’t want this saved.",
+    placeholder: "For example: 7 LPA or skip",
+  },
+  {
+    key: "expectedCtc",
+    question: "For Naukri, what expected CTC should I save? Type “skip” if you don’t want this saved.",
+    placeholder: "For example: 15 LPA or skip",
+  },
+  {
+    key: "willingToRelocate",
+    question: "Are you willing to relocate if a form asks?",
+    placeholder: "Yes or No",
+  },
+  {
+    key: "sponsorshipNeeded",
+    question: "Do you need visa sponsorship?",
+    placeholder: "Yes or No",
+  },
 ];
 
 const ATS_STOPWORDS = new Set([
@@ -424,11 +459,15 @@ function handleOnboardingAnswer(message) {
   }
 
   const value = message.trim();
+  const skipped = /^skip|later$/i.test(value);
   if (step.key === "skills") {
     state.profile.skills = splitSkills(value);
   } else if (step.key === "email") {
-    state.profile.emailSkipped = /^skip|later$/i.test(value);
+    state.profile.emailSkipped = skipped;
     state.profile.email = state.profile.emailSkipped ? "" : value;
+  } else if (["phone", "currentCtc", "expectedCtc"].includes(step.key)) {
+    state.profile[`${step.key}Skipped`] = skipped;
+    state.profile[step.key] = skipped ? "" : value;
   } else {
     state.profile[step.key] = value;
   }
@@ -448,7 +487,7 @@ function handleOnboardingAnswer(message) {
     queueProfileSave(true).then(loadDashboard);
   }
   addAssistantMessage(`
-    <p>I have enough to create your first career profile. You can refine it anytime by talking to me.</p>
+    <p>I saved your profile and reusable application answers. LinkedIn and Naukri runs will reuse these details instead of asking again.</p>
     ${profileSummaryCard()}
     <div class="resume-ready-card">
       <span class="resume-icon" aria-hidden="true">▤</span>
@@ -667,7 +706,7 @@ function showApplyConfirmation() {
   );
   const autoSubmitEnabled = policy.mode === "auto-submit";
   addAssistantMessage(`
-    <p>${autoSubmitEnabled ? "I can prepare the local agent, but submitting applications changes your external accounts, so this confirmation is required." : "Your safety policy currently stops before submission. Enable auto-submit first, then I’ll ask once more before starting the run."}</p>
+    <p>${autoSubmitEnabled ? "Auto-submit is already enabled. I’ll use the saved profile and application answers for LinkedIn + Naukri without asking again." : "Your policy currently stops before submission. Enable auto-submit once, and future runs can reuse the saved policy and answers."}</p>
     <div class="confirmation-card">
       <div class="confirmation-title">
         <span aria-hidden="true">!</span>
@@ -682,7 +721,7 @@ function showApplyConfirmation() {
         <div><dt>Today</dt><dd>${formatNumber(summary.applied_today)}/${formatNumber(policy.max_applications_per_day || 0)}</dd></div>
         <div><dt>Mode</dt><dd>${escapeHtml(formatLabel(policy.mode || "review-only"))}</dd></div>
       </dl>
-      <div class="confirmation-warning">${autoSubmitEnabled ? "This run can submit applications through your logged-in browser session." : "Enabling auto-submit changes future application runs until you switch back to review-only."}</div>
+      <div class="confirmation-warning">${autoSubmitEnabled ? "This run can submit applications through your logged-in browser session using saved answers." : "You can switch back to review-only anytime."}</div>
       <button class="confirm-action-button" type="button" data-action="${
         state.desktop
           ? autoSubmitEnabled
@@ -692,7 +731,7 @@ function showApplyConfirmation() {
       }">${
         state.desktop
           ? autoSubmitEnabled
-            ? "Confirm and start local agent"
+            ? "Start local agent"
             : "Enable auto-submit"
           : "Open desktop to review"
       }</button>
@@ -900,7 +939,7 @@ function renderMessages() {
 
 function generateResume() {
   const profile = state.profile;
-  const contact = [profile.email, profile.location].filter(Boolean).join(" · ");
+  const contact = [profile.email, profile.phone, profile.location, profile.linkedinUrl || profile.linkedin_url, profile.website].filter(Boolean).join(" · ");
   const skills = (profile.skills || []).join(" · ") || "[Add your skills]";
   const backgroundLines = sentenceList(profile.background || "");
   const summary = profile.background
@@ -935,7 +974,7 @@ function generateResume() {
 
 function generateTailoredResume(job) {
   const profile = state.profile;
-  const contact = [profile.email, profile.location].filter(Boolean).join(" · ");
+  const contact = [profile.email, profile.phone, profile.location, profile.linkedinUrl || profile.linkedin_url, profile.website].filter(Boolean).join(" · ");
   const title = cleanTitle(job?.title || profile.target || "[Target role]");
   const company = job?.company || "[Company]";
   const location = job?.location || "[Location]";
@@ -1150,12 +1189,28 @@ function defaultProfile() {
   return {
     name: "",
     email: "",
+    phone: "",
     target: "",
     background: "",
     skills: [],
     location: "",
+    linkedinUrl: "",
+    website: "",
+    yearsExperience: "",
+    authorizedToWork: "Yes",
+    sponsorshipNeeded: "No",
+    willingToRelocate: "Yes",
+    noticePeriod: "",
+    currentCtc: "",
+    expectedCtc: "",
+    careerBreak: "",
+    disability: "",
+    gender: "",
     resumeStatus: "",
     emailSkipped: false,
+    phoneSkipped: false,
+    currentCtcSkipped: false,
+    expectedCtcSkipped: false,
   };
 }
 
@@ -1229,10 +1284,22 @@ async function loadDesktopProfile() {
     const response = await fetch("/api/profile", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const profile = await response.json();
+    const answers = profile.application_answers || {};
     state.profile = {
       ...defaultProfile(),
       ...profile,
       resumeStatus: profile.resume_status || profile.resumeStatus || "",
+      linkedinUrl: profile.linkedin_url || profile.linkedinUrl || answers.linkedin_url || "",
+      yearsExperience: profile.yearsExperience || answers.years_experience || "",
+      authorizedToWork: profile.authorizedToWork || answers.authorized_to_work || "Yes",
+      sponsorshipNeeded: profile.sponsorshipNeeded || answers.sponsorship_needed || "No",
+      willingToRelocate: profile.willingToRelocate || answers.willing_to_relocate || "Yes",
+      noticePeriod: profile.noticePeriod || answers.notice_period || "",
+      currentCtc: profile.currentCtc || answers.current_ctc || "",
+      expectedCtc: profile.expectedCtc || answers.expected_ctc || "",
+      careerBreak: profile.careerBreak || answers.career_break || "",
+      disability: profile.disability || answers.disability || "",
+      gender: profile.gender || answers.gender || "",
     };
     safeStorageSet("local", PROFILE_KEY, JSON.stringify(state.profile));
   } catch (error) {
@@ -1476,7 +1543,7 @@ async function enableAutoSubmit() {
   await loadDashboard();
   addAssistantMessage(`
     <p><strong>Auto-submit is enabled.</strong> Daily limit: ${formatNumber(data.max_applications_per_day)}. Minimum score: ${formatNumber(data.min_score_to_submit)}. Easy Apply required: ${data.require_easy_apply ? "yes" : "no"}.</p>
-    <p>Please confirm the actual application run separately.</p>
+    <p>Future application runs will use this saved policy and your saved application answers.</p>
   `);
   showApplyConfirmation();
 }
@@ -1539,6 +1606,12 @@ function profileCompletion() {
 function profileValue(key) {
   if (key === "skills") return (state.profile.skills || []).length > 0;
   if (key === "email") return state.profile.emailSkipped || Boolean(String(state.profile.email || "").trim());
+  const skipKey = {
+    phone: "phoneSkipped",
+    currentCtc: "currentCtcSkipped",
+    expectedCtc: "expectedCtcSkipped",
+  }[key];
+  if (skipKey && state.profile[skipKey]) return true;
   return Boolean(String(state.profile[key] || "").trim());
 }
 

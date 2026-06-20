@@ -65,7 +65,15 @@ def write_default_workspace(workspace: Path) -> None:
                     "authorized_to_work": "Yes",
                     "sponsorship_needed": "No",
                     "willing_to_relocate": "Yes",
-                    "notice_period": ""
+                    "notice_period": "",
+                    "current_ctc": "",
+                    "expected_ctc": "",
+                    "career_break": "",
+                    "disability": "",
+                    "gender": "",
+                    "current_company": "",
+                    "current_title": "",
+                    "highest_education": ""
                 }
             }, indent=2),
             encoding="utf-8",

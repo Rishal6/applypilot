@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..applications import ApplicationRecord
+from ..career import load_profile_answers
 from ..form_filler import AIFormFiller, load_profile
 from ..human import BETWEEN_JOBS, READING_TIME, human_pause
 from ..models import Evaluation, Job
@@ -476,12 +477,7 @@ class LinkedInBrowserConnector:
         return data if isinstance(data, list) else []
 
     def _load_profile_answers(self) -> dict[str, str]:
-        config_file = self.workspace / "config.json"
-        if not config_file.exists():
-            return {}
-        with config_file.open() as f:
-            config = json.load(f)
-        return dict(config.get("profile_answers") or {})
+        return load_profile_answers(self.workspace)
 
     def _init_ai_filler(self) -> AIFormFiller | None:
         try:
