@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import ssl
 import urllib.request
 
 from .llm import build_scoring_prompt, parse_llm_evaluation
@@ -40,10 +39,7 @@ class GeminiProvider:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with urllib.request.urlopen(request, timeout=120, context=ctx) as response:
+        with urllib.request.urlopen(request, timeout=120) as response:
             raw = json.loads(response.read().decode("utf-8"))
         text = raw["candidates"][0]["content"]["parts"][0]["text"]
         return parse_llm_evaluation(text, job, preferences, self.name)

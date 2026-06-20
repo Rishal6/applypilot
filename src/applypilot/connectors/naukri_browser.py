@@ -26,17 +26,10 @@ from ..policy import AutomationPolicy
 
 logger = logging.getLogger(__name__)
 
-# Default chatbot answers — overridable from workspace config.json
-DEFAULT_CHATBOT_ANSWERS: dict[str, str] = {
-    "career break": "No",
-    "based out": "Yes",
-    "relocate": "Yes",
-    "notice period": "15",
-    "current ctc": "7",
-    "expected ctc": "15",
-    "experience": "3",
-    "disability": "No",
-}
+# Safe default: do not guess personal chatbot answers such as CTC,
+# experience, notice period, location, or disability. Customers can provide
+# explicit answers in config.json under "naukri_chatbot_answers".
+DEFAULT_CHATBOT_ANSWERS: dict[str, str] = {}
 
 
 class NaukriBrowserConnector:
@@ -77,6 +70,15 @@ class NaukriBrowserConnector:
             if self._is_already_applied():
                 return self._record(job, evaluation, policy, "skipped", "Already applied.")
 
+            if policy.should_stop_before_submit:
+                return self._record(
+                    job,
+                    evaluation,
+                    policy,
+                    "prepared",
+                    "Opened Naukri job and stopped before clicking Apply.",
+                )
+
             # Click Apply
             human_pause(1, 3)
             if not self._click_apply():
@@ -87,18 +89,11 @@ class NaukriBrowserConnector:
             if result == "applied":
                 return self._record(job, evaluation, policy, "applied", "Application submitted.")
             elif result == "no_chatbot":
-                # Chatbot never appeared — might have been a direct apply
-                return self._record(job, evaluation, policy, "applied", "Direct apply (no chatbot).")
+                return self._record(job, evaluation, policy, "prepared", "No confirmation detected after Apply; review manually.")
+            elif result == "needs_review":
+                return self._record(job, evaluation, policy, "prepared", "Naukri asked an unconfigured question; review manually.")
             else:
-                # Timeout — try Save/Submit one more time
-                self._js(
-                    'var btns = document.querySelectorAll("button"); '
-                    'for(var i=0;i<btns.length;i++){'
-                    'var t=btns[i].textContent.trim(); '
-                    'if(t==="Save"||t==="Submit"||t==="Done"){btns[i].click();break;}}'
-                )
-                human_pause(2, 3)
-                return self._record(job, evaluation, policy, "applied", "Apply flow completed (timeout fallback).")
+                return self._record(job, evaluation, policy, "prepared", "Timed out before submit confirmation; review manually.")
 
         except Exception as exc:
             logger.exception("Naukri Chrome connector failed")
@@ -150,7 +145,7 @@ class NaukriBrowserConnector:
     def _handle_chatbot(self) -> str:
         """Handle chatbot questions after clicking Apply.
 
-        Returns "applied", "no_chatbot", or "timeout".
+        Returns "applied", "no_chatbot", "needs_review", or "timeout".
         """
         for attempt in range(8):
             human_pause(2, 4)
@@ -186,13 +181,14 @@ class NaukriBrowserConnector:
                     break
 
             if answer:
+                answer_json = json.dumps(answer)
                 # Click the chip/button with that answer
                 self._js_file(f"""
                 (function() {{
                     var chips = document.querySelectorAll('.chatbot_Chip, .chipItem, [class*=Chip], [class*=chip]');
                     for (var i = 0; i < chips.length; i++) {{
                         var text = chips[i].textContent.trim();
-                        if (text === '{answer}') {{
+                        if (text === {answer_json}) {{
                             chips[i].click();
                             return 'clicked:' + text;
                         }}
@@ -200,7 +196,7 @@ class NaukriBrowserConnector:
                     var btns = document.querySelectorAll('button');
                     for (var i = 0; i < btns.length; i++) {{
                         var text = btns[i].textContent.trim();
-                        if (text === '{answer}') {{
+                        if (text === {answer_json}) {{
                             btns[i].click();
                             return 'clicked_btn:' + text;
                         }}
@@ -210,23 +206,8 @@ class NaukriBrowserConnector:
                 """)
                 logger.info("Chatbot: '%s' -> answered '%s'", chatbot_lower[:50], answer)
             else:
-                # Unknown question — try Save/Submit or first chip
-                self._js_file("""
-                (function() {
-                    var btns = document.querySelectorAll('button');
-                    for (var i = 0; i < btns.length; i++) {
-                        var text = btns[i].textContent.trim();
-                        if (text === 'Save' || text === 'Submit' || text === 'Done') {
-                            btns[i].click();
-                            return 'clicked:' + text;
-                        }
-                    }
-                    var chips = document.querySelectorAll('.chatbot_Chip, .chipItem');
-                    if (chips.length > 0) { chips[0].click(); return 'clicked_first_chip'; }
-                    return 'nothing';
-                })()
-                """)
                 logger.info("Chatbot: unknown question in '%s'", chatbot_lower[:50])
+                return "needs_review"
 
             # Click skills chips (click all clickable ones)
             self._js_file("""

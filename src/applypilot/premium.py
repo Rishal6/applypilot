@@ -1,20 +1,24 @@
-"""Premium Features — LinkedIn InMail, profile viewer auto-connect, Naukri status.
+"""Premium discovery helpers for LinkedIn and Naukri.
 
-Uses Playwright to automate premium LinkedIn and Naukri features with
-human-like delays and daily rate limits.
+This module intentionally drafts outreach only. It may inspect profile viewers,
+search hiring-manager profiles, and read Naukri status pages, but it must not
+click LinkedIn Connect, Message, InMail, or Send buttons. Sending stays a manual
+customer action unless a separate, explicit automation policy supports it.
 """
 
 from __future__ import annotations
 
 import csv
-import json
 import logging
-import random
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
-from .human import human_pause, human_scroll
+from .career import load_career_profile, split_target_roles
+from .config import load_preferences
+from .human import human_pause
+from .search_plan import normalize
 
 logger = logging.getLogger(__name__)
 
@@ -22,64 +26,65 @@ MAX_INMAILS_PER_DAY = 10
 MAX_CONNECTS_PER_DAY = 20
 
 RELEVANT_VIEWER_KEYWORDS = [
-    "recruit", "talent", "hiring", "hr", "engineer", "ai",
-    "ml", "genai", "cto", "founder", "lead", "manager",
+    "recruit", "talent", "hiring", "hr", "engineer", "developer",
+    "cto", "founder", "lead", "manager",
 ]
 
-HIRING_MANAGER_SEARCHES = [
-    "AI Engineer hiring manager India",
-    "GenAI recruiter India",
-    "Machine Learning hiring India",
-    "talent acquisition AI",
+DEFAULT_HIRING_MANAGER_SEARCHES = [
+    "recruiter hiring",
+    "talent acquisition hiring",
+    "engineering manager hiring",
+    "founder hiring",
 ]
 
 
 class PremiumFeatures:
-    """Runs premium LinkedIn + Naukri features via Playwright."""
+    """Draft premium LinkedIn outreach and inspect Naukri activity."""
 
     def __init__(self, workspace: Path, max_inmails: int = MAX_INMAILS_PER_DAY, max_connects: int = MAX_CONNECTS_PER_DAY):
         self.workspace = workspace
         self.max_inmails = max_inmails
         self.max_connects = max_connects
+        self.profile = load_career_profile(workspace)
+        self.preferences = load_preferences(workspace)
         self._page = None
-        self._connects_sent = 0
-        self._inmails_sent = 0
+        self._connect_drafts = 0
+        self._inmail_drafts = 0
 
     def run(self, page) -> dict[str, Any]:
-        """Run all premium features. Expects a Playwright page logged into LinkedIn."""
+        """Run premium discovery. Expects a Playwright page logged into LinkedIn."""
         self._page = page
-        self._connects_sent = 0
-        self._inmails_sent = 0
+        self._connect_drafts = 0
+        self._inmail_drafts = 0
 
-        # Feature 1: Auto-connect with profile viewers
         viewers = self._get_profile_viewers()
         self._process_viewers(viewers)
 
-        # Feature 2: InMail hiring managers
         hiring_people = self._search_hiring_managers()
         self._send_inmails(hiring_people)
 
-        # Feature 3: Naukri application status
         naukri_views = self._check_naukri_status()
 
         summary = {
             "profile_viewers_found": len(viewers),
-            "connections_sent": self._connects_sent,
-            "inmails_sent": self._inmails_sent,
+            "connection_drafts": self._connect_drafts,
+            "inmail_drafts": self._inmail_drafts,
+            "connections_sent": 0,
+            "inmails_sent": 0,
             "naukri_activity": len(naukri_views),
         }
         logger.info(
-            "Premium features complete: viewers=%d, connects=%d, inmails=%d, naukri=%d",
-            len(viewers), self._connects_sent, self._inmails_sent, len(naukri_views),
+            "Premium discovery complete: viewers=%d, connection_drafts=%d, inmail_drafts=%d, naukri=%d",
+            len(viewers), self._connect_drafts, self._inmail_drafts, len(naukri_views),
         )
         return summary
 
     # ═══════════════════════════════════════════════════════════════
-    # Feature 1: Profile Viewers → Auto-Connect
+    # Feature 1: Profile Viewers → Connection Drafts
     # ═══════════════════════════════════════════════════════════════
 
     def _get_profile_viewers(self) -> list[dict[str, str]]:
-        """Get list of people who viewed your profile (Premium feature)."""
+        """Get people who viewed the profile. This is read-only."""
         logger.info("Premium Feature 1: Profile Viewers")
         self._page.goto(
             "https://www.linkedin.com/me/profile-views/",
@@ -115,170 +120,57 @@ class PremiumFeatures:
         return viewers
 
     def _process_viewers(self, viewers: list[dict[str, str]]) -> None:
-        """Auto-connect with relevant profile viewers."""
-        for viewer in viewers[: self.max_connects]:
-            headline_lower = viewer.get("headline", "").lower()
-            relevant = any(kw in headline_lower for kw in RELEVANT_VIEWER_KEYWORDS)
-            if not relevant:
+        """Save connection-note drafts for relevant profile viewers."""
+        for viewer in viewers:
+            if self._connect_drafts >= self.max_connects:
+                logger.info("  Hit daily connection draft limit (%d)", self.max_connects)
+                break
+            if not self._is_relevant_person(viewer):
                 continue
 
-            result = self._connect_with_viewer(viewer)
-            if result == "connected":
-                self._connects_sent += 1
-                self._save_csv("connections_sent.csv", {
-                    "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "name": viewer["name"],
-                    "headline": viewer.get("headline", ""),
-                    "profile_url": viewer.get("profile_url", ""),
-                    "note": "Auto-connected (viewed profile)",
-                }, ["date", "name", "headline", "profile_url", "note"])
-
-            human_pause(10, 20)
-
-            if self._connects_sent >= self.max_connects:
-                logger.info("  Hit daily connect limit (%d)", self.max_connects)
-                break
+            note = self._generate_connect_note(viewer)
+            self._connect_drafts += 1
+            self._save_csv("connection_drafts.csv", {
+                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "name": viewer.get("name", ""),
+                "headline": viewer.get("headline", ""),
+                "profile_url": viewer.get("profile_url", ""),
+                "note": note,
+                "status": "draft",
+            }, ["date", "name", "headline", "profile_url", "note", "status"])
+            human_pause(1, 3)
 
     def _connect_with_viewer(self, viewer: dict[str, str]) -> str:
-        """Send connection request to someone who viewed your profile."""
-        profile_url = viewer.get("profile_url", "")
-        if not profile_url:
-            return "no_url"
+        """Disabled guard: this module drafts only and never sends requests."""
+        logger.info("Connection sending is disabled; saved a draft instead for %s", viewer.get("name", "viewer"))
+        return "blocked"
 
-        self._page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
-        human_pause(3, 5)
-
-        # Check if already connected
-        body_text = self._page.evaluate("document.body ? document.body.innerText.substring(0, 3000) : ''")
-        if "Message" in (body_text or "") and "Connect" not in (body_text or ""):
-            logger.debug("    Already connected with %s", viewer["name"])
-            return "already_connected"
-
-        # Click Connect button
-        clicked = self._page.evaluate("""
-        (() => {
-            const btns = document.querySelectorAll('button');
-            for (const btn of btns) {
-                const text = btn.textContent.trim();
-                const aria = btn.getAttribute('aria-label') || '';
-                if (text === 'Connect' || aria.indexOf('Connect') > -1) {
-                    btn.click();
-                    return 'clicked_connect';
-                }
-            }
-            // Try "More" dropdown
-            for (const btn of btns) {
-                if (btn.textContent.trim() === 'More') {
-                    btn.click();
-                    return 'clicked_more';
-                }
-            }
-            return 'no_connect_button';
-        })()
-        """)
-
-        if clicked == "clicked_more":
-            human_pause(1, 2)
-            self._page.evaluate("""
-            (() => {
-                const items = document.querySelectorAll('[role="menuitem"], li');
-                for (const item of items) {
-                    if (item.textContent.indexOf('Connect') > -1) {
-                        item.click();
-                        return 'clicked';
-                    }
-                }
-                return 'not_found';
-            })()
-            """)
-            human_pause(1, 2)
-
-        if "clicked" in (clicked or ""):
-            human_pause(1, 2)
-            note = self._generate_connect_note(viewer)
-
-            # Click "Add a note"
-            add_note = self._page.evaluate("""
-            (() => {
-                const btns = document.querySelectorAll('button');
-                for (const btn of btns) {
-                    if (btn.textContent.indexOf('Add a note') > -1) {
-                        btn.click();
-                        return 'note_opened';
-                    }
-                }
-                return 'no_note_option';
-            })()
-            """)
-
-            if add_note == "note_opened":
-                human_pause(1, 2)
-                # Type connection note
-                self._page.evaluate(f"""
-                (() => {{
-                    const ta = document.querySelector('textarea#custom-message, textarea');
-                    if (ta) {{
-                        ta.value = {json.dumps(note)};
-                        ta.dispatchEvent(new Event('input', {{bubbles: true}}));
-                    }}
-                }})()
-                """)
-                human_pause(1, 2)
-
-            # Click Send
-            self._page.evaluate("""
-            (() => {
-                const btns = document.querySelectorAll('button');
-                for (const btn of btns) {
-                    const text = btn.textContent.trim();
-                    if (text === 'Send' || text === 'Send now') {
-                        btn.click();
-                        return 'sent';
-                    }
-                }
-                return 'no_send';
-            })()
-            """)
-            logger.info("    Connected with %s", viewer["name"])
-            return "connected"
-
-        logger.debug("    Could not connect with %s (%s)", viewer["name"], clicked)
-        return "failed"
-
-    @staticmethod
-    def _generate_connect_note(viewer: dict[str, str]) -> str:
-        """Generate short personalized connection note."""
-        headline = viewer.get("headline", "").lower()
-        if any(kw in headline for kw in ["recruit", "talent", "hiring"]):
-            return (
-                "Hi! I noticed you viewed my profile. I'm an AI Engineer at Amazon "
-                "(GenAI, RAG, multi-agent systems). Would love to connect and explore "
-                "any relevant opportunities. - Rishal"
-            )
-        elif any(kw in headline for kw in ["engineer", "developer"]):
-            return (
-                "Hi! Saw you checked out my profile. I work on LLM systems and AI agents "
-                "at Amazon. Would be great to connect with a fellow engineer. - Rishal"
-            )
-        else:
-            return (
-                "Hi! Thanks for viewing my profile. I'm an AI Engineer working on GenAI "
-                "and LLM systems. Would love to connect! - Rishal"
-            )
+    def _generate_connect_note(self, viewer: dict[str, str]) -> str:
+        """Generate a short personalized connection note from customer profile facts."""
+        first_name = (viewer.get("name") or "").split()[0]
+        greeting = f"Hi {first_name}," if first_name else "Hi,"
+        target = self._target_summary()
+        skills = self._skills_summary(max_items=3)
+        skills_part = f" with {skills}" if skills else ""
+        note = (
+            f"{greeting} thanks for viewing my profile. "
+            f"I'm {self._candidate_name_or_phrase()}, targeting {target}{skills_part}. "
+            "Would be glad to connect."
+        )
+        return _trim(note, 290)
 
     # ═══════════════════════════════════════════════════════════════
-    # Feature 2: InMail to Hiring Managers
+    # Feature 2: Hiring Managers → InMail Drafts
     # ═══════════════════════════════════════════════════════════════
 
     def _search_hiring_managers(self) -> list[dict[str, str]]:
-        """Find hiring managers/recruiters posting AI jobs."""
-        logger.info("Premium Feature 2: InMail to Hiring Managers")
+        """Find hiring managers/recruiters using profile-driven search terms."""
+        logger.info("Premium Feature 2: Hiring Manager Search")
         all_people: list[dict[str, str]] = []
 
-        for query in HIRING_MANAGER_SEARCHES[:2]:
-            encoded = query.replace(" ", "%20")
+        for query in self._hiring_searches()[:3]:
             self._page.goto(
-                f"https://www.linkedin.com/search/results/people/?keywords={encoded}&openToHire=true",
+                f"https://www.linkedin.com/search/results/people/?keywords={quote(query)}&openToHire=true",
                 wait_until="domcontentloaded",
                 timeout=30000,
             )
@@ -290,8 +182,8 @@ class PremiumFeatures:
                 const cards = document.querySelectorAll('.entity-result, .reusable-search__result-container');
                 for (let i = 0; i < Math.min(cards.length, 10); i++) {
                     const card = cards[i];
-                    const nameEl = card.querySelector('.entity-result__title-text a span span');
-                    const headlineEl = card.querySelector('.entity-result__primary-subtitle');
+                    const nameEl = card.querySelector('.entity-result__title-text a span span, .app-aware-link span');
+                    const headlineEl = card.querySelector('.entity-result__primary-subtitle, .entity-result__summary');
                     const linkEl = card.querySelector('a[href*="/in/"]');
                     const inmailBtn = card.querySelector('button[aria-label*="InMail"], button[aria-label*="Message"]');
                     const name = nameEl ? nameEl.textContent.trim() : '';
@@ -313,140 +205,63 @@ class PremiumFeatures:
         return all_people
 
     def _send_inmails(self, people: list[dict[str, str]]) -> None:
-        """Send InMail to relevant people."""
-        for person in people[: self.max_inmails]:
-            headline_lower = person.get("headline", "").lower()
-            relevant = any(kw in headline_lower for kw in [
-                "recruit", "talent", "hiring", "hr", "ai", "genai",
-                "machine learning", "engineering manager",
-            ])
-            if not relevant:
+        """Save InMail drafts for relevant people. Kept name for CLI compatibility."""
+        for person in people:
+            if self._inmail_drafts >= self.max_inmails:
+                logger.info("  Hit daily InMail draft limit (%d)", self.max_inmails)
+                break
+            if not self._is_relevant_person(person):
                 continue
 
-            result = self._send_inmail(person)
-            if result == "sent":
-                self._inmails_sent += 1
-                self._save_csv("inmails_sent.csv", {
-                    "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "name": person["name"],
-                    "headline": person.get("headline", ""),
-                    "profile_url": person.get("profile_url", ""),
-                }, ["date", "name", "headline", "profile_url"])
-
-            human_pause(15, 30)
-
-            if self._inmails_sent >= self.max_inmails:
-                logger.info("  Hit InMail daily limit (%d)", self.max_inmails)
-                break
+            message = self._generate_inmail(person)
+            self._inmail_drafts += 1
+            self._save_csv("inmail_drafts.csv", {
+                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "name": person.get("name", ""),
+                "headline": person.get("headline", ""),
+                "profile_url": person.get("profile_url", ""),
+                "subject": f"{self._target_summary()} - quick intro",
+                "message": message,
+                "status": "draft",
+            }, ["date", "name", "headline", "profile_url", "subject", "message", "status"])
+            human_pause(1, 3)
 
     def _send_inmail(self, person: dict[str, str]) -> str:
-        """Send InMail to a person (Premium feature)."""
-        profile_url = person.get("profile_url", "")
-        if not profile_url:
-            return "no_url"
+        """Disabled guard: this module drafts only and never sends InMail."""
+        logger.info("InMail sending is disabled; saved a draft instead for %s", person.get("name", "contact"))
+        return "blocked"
 
-        self._page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
-        human_pause(3, 5)
+    def _generate_inmail(self, person: dict[str, str]) -> str:
+        """Generate a personalized InMail draft from customer profile facts."""
+        first_name = person.get("name", "").split()[0] if person.get("name") else "there"
+        target = self._target_summary()
+        skills = self._skills_summary(max_items=5)
+        background = _first_sentence(self.profile.get("background") or "")
+        signature = self._contact_signature()
 
-        # Click Message button
-        clicked = self._page.evaluate("""
-        (() => {
-            const btns = document.querySelectorAll('button');
-            for (const btn of btns) {
-                const text = btn.textContent.trim();
-                const aria = btn.getAttribute('aria-label') || '';
-                if (text === 'Message' || aria.indexOf('Message') > -1 || aria.indexOf('InMail') > -1) {
-                    btn.click();
-                    return 'clicked';
-                }
-            }
-            return 'no_message_button';
-        })()
-        """)
-
-        if clicked != "clicked":
-            return "no_button"
-
-        human_pause(2, 4)
-        message = self._generate_inmail(person)
-
-        # Type subject if available
-        self._page.evaluate("""
-        (() => {
-            const subj = document.querySelector('input[name=subject], input[placeholder*=Subject]');
-            if (subj) {
-                subj.value = 'AI Engineer - Interested in Opportunities';
-                subj.dispatchEvent(new Event('input', {bubbles: true}));
-            }
-        })()
-        """)
-        human_pause(0.5, 1)
-
-        # Type message body
-        self._page.evaluate(f"""
-        (() => {{
-            const msgBox = document.querySelector('.msg-form__contenteditable, [role="textbox"], textarea[name*="message"]');
-            if (msgBox) {{
-                msgBox.focus();
-                msgBox.textContent = {json.dumps(message)};
-                msgBox.dispatchEvent(new Event('input', {{bubbles: true}}));
-                return 'typed';
-            }}
-            return 'no_textbox';
-        }})()
-        """)
-        human_pause(1, 2)
-
-        # Click Send
-        sent = self._page.evaluate("""
-        (() => {
-            const btns = document.querySelectorAll('button');
-            for (const btn of btns) {
-                const text = btn.textContent.trim().toLowerCase();
-                if (text === 'send' && !btn.disabled) {
-                    btn.click();
-                    return 'sent';
-                }
-            }
-            return 'no_send';
-        })()
-        """)
-
-        if sent == "sent":
-            logger.info("    InMail sent to %s", person["name"])
-            return "sent"
-        return "failed"
-
-    @staticmethod
-    def _generate_inmail(person: dict[str, str]) -> str:
-        """Generate personalized InMail message."""
-        headline = person.get("headline", "").lower()
-        first_name = person.get("name", "").split()[0] if person.get("name") else "Hi"
-
-        if any(kw in headline for kw in ["recruit", "talent"]):
-            return (
-                f"Hi {first_name},\n\n"
-                "I'm an AI Engineer at Amazon building production LLM systems "
-                "(10K+ daily executions, RAG, multi-agent orchestration). "
-                "I'm exploring new opportunities in GenAI/AI Engineering.\n\n"
-                "Would love to chat if you have any relevant roles open.\n\n"
-                "Best,\nRishal V S\n+91 97154 78366"
-            )
-        else:
-            return (
-                f"Hi {first_name},\n\n"
-                "Noticed you're in the AI space. I'm currently at Amazon building LLM-powered systems "
-                "and exploring my next move in GenAI/AI Engineering.\n\n"
-                "Would be great to connect and learn about what your team is working on.\n\n"
-                "Best,\nRishal V S"
-            )
+        body = [
+            f"Hi {first_name},",
+            "",
+            f"I noticed your profile while looking at {target} opportunities.",
+        ]
+        if background:
+            body.append(f"My background: {background}")
+        elif skills:
+            body.append(f"My relevant skills include {skills}.")
+        body.extend([
+            "",
+            "If you are hiring for a role where my profile fits, I would be happy to share my resume.",
+            "",
+            f"Best,\n{signature}",
+        ])
+        return "\n".join(body)
 
     # ═══════════════════════════════════════════════════════════════
     # Feature 3: Naukri Application Status
     # ═══════════════════════════════════════════════════════════════
 
     def _check_naukri_status(self) -> list[str]:
-        """Check Naukri application status — who viewed your resume."""
+        """Check Naukri application status — who viewed the resume."""
         logger.info("Premium Feature 3: Naukri Application Status")
 
         self._page.goto("https://www.naukri.com", wait_until="domcontentloaded", timeout=30000)
@@ -472,8 +287,7 @@ class PremiumFeatures:
         })()
         """)
 
-        if not raw or not isinstance(raw, list) or len(raw) == 0:
-            # Try alternative page
+        if not raw or not isinstance(raw, list):
             self._page.goto(
                 "https://www.naukri.com/mnjuser/profile",
                 wait_until="domcontentloaded",
@@ -488,29 +302,76 @@ class PremiumFeatures:
             """)
             raw = raw if isinstance(raw, list) else []
 
-        # Filter for recruiter activity
         viewed: list[str] = []
         for line in raw:
             line_lower = line.lower() if isinstance(line, str) else ""
             if any(kw in line_lower for kw in ["viewed", "shortlisted", "recruiter"]):
                 viewed.append(str(line).strip()[:200])
 
-        if viewed:
-            logger.info("  Found %d applications with recruiter activity", len(viewed))
-            for v in viewed[:10]:
-                self._save_csv("naukri_status.csv", {
-                    "date": datetime.now().strftime("%Y-%m-%d"),
-                    "status": v[:200],
-                    "action": "follow_up_needed",
-                }, ["date", "status", "action"])
-        else:
-            logger.info("  No recruiter views detected yet")
+        for status in viewed[:10]:
+            self._save_csv("naukri_status.csv", {
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "status": status[:200],
+                "action": "review_follow_up",
+            }, ["date", "status", "action"])
 
+        logger.info("  Found %d applications with recruiter activity", len(viewed))
         return viewed
 
     # ═══════════════════════════════════════════════════════════════
     # Helpers
     # ═══════════════════════════════════════════════════════════════
+
+    def _is_relevant_person(self, person: dict[str, str]) -> bool:
+        searchable = normalize(" ".join([
+            str(person.get("name") or ""),
+            str(person.get("headline") or ""),
+        ]))
+        if not searchable:
+            return False
+        terms = [
+            *RELEVANT_VIEWER_KEYWORDS,
+            *self.preferences.target_roles,
+            *self.preferences.preferred_skills[:8],
+        ]
+        return any(normalize(term) and normalize(term) in searchable for term in terms)
+
+    def _hiring_searches(self) -> list[str]:
+        roles = list(self.preferences.target_roles)
+        if not roles:
+            roles = split_target_roles(str(self.profile.get("target") or ""))
+        searches: list[str] = []
+        for role in roles[:4]:
+            searches.append(f"{role} recruiter hiring")
+            searches.append(f"{role} hiring manager")
+        for skill in self.preferences.preferred_skills[:3]:
+            searches.append(f"{skill} recruiter hiring")
+        return _dedupe(searches) or list(DEFAULT_HIRING_MANAGER_SEARCHES)
+
+    def _target_summary(self) -> str:
+        return (
+            str(self.profile.get("target") or "").strip()
+            or ", ".join(self.preferences.target_roles[:2])
+            or "relevant roles"
+        )
+
+    def _skills_summary(self, max_items: int = 4) -> str:
+        skills = self.profile.get("skills") or self.preferences.preferred_skills
+        return ", ".join(str(skill) for skill in skills[:max_items] if str(skill).strip())
+
+    def _candidate_name_or_phrase(self) -> str:
+        name = str(self.profile.get("name") or "").strip()
+        return name if name else "a candidate"
+
+    def _contact_signature(self) -> str:
+        parts = [
+            str(self.profile.get("name") or "").strip() or "Candidate",
+            str(self.profile.get("email") or "").strip(),
+            str(self.profile.get("phone") or "").strip(),
+            str(self.profile.get("linkedin_url") or "").strip(),
+            str(self.profile.get("website") or "").strip(),
+        ]
+        return " | ".join(part for part in parts if part)
 
     def _save_csv(self, filename: str, row: dict[str, str], headers: list[str]) -> None:
         """Append a row to a CSV file in workspace."""
@@ -523,3 +384,32 @@ class PremiumFeatures:
             if not file_exists:
                 writer.writeheader()
             writer.writerow(row)
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        cleaned = " ".join(str(value or "").split())
+        key = cleaned.casefold()
+        if not cleaned or key in seen:
+            continue
+        seen.add(key)
+        output.append(cleaned)
+    return output
+
+
+def _first_sentence(value: str) -> str:
+    cleaned = " ".join(str(value or "").split())
+    if not cleaned:
+        return ""
+    for sep in [". ", "\n"]:
+        if sep in cleaned:
+            cleaned = cleaned.split(sep, 1)[0]
+            break
+    return _trim(cleaned, 260)
+
+
+def _trim(value: str, limit: int) -> str:
+    text = " ".join(value.split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"

@@ -10,11 +10,12 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from ..config import load_preferences
 from ..human import BETWEEN_SEARCHES, human_pause
 from ..models import Job
-from ..search_plan import is_profile_aligned
+from ..search_plan import build_search_plan, is_profile_aligned
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class NaukriSearcher:
 
     def __init__(self, workspace: Path, queries: list[str] | None = None):
         self.workspace = workspace
-        self.queries = queries or list(DEFAULT_NAUKRI_QUERIES)
+        self.queries = list(queries) if queries else None
 
     def search(self) -> list[Job]:
         if platform.system() != "Darwin":
@@ -78,7 +79,7 @@ class NaukriSearcher:
         found_jobs: list[Job] = []
         seen_urls: set[str] = set()
 
-        queries = list(self.queries)
+        queries = list(self.queries or self._profile_queries())
         random.shuffle(queries)
 
         for qi, query in enumerate(queries):
@@ -118,9 +119,15 @@ class NaukriSearcher:
         return found_jobs
 
     def _build_url(self, query: str) -> str:
-        slug = query.lower().replace(" ", "-")
-        keyword = query.replace(" ", "+")
-        return f"https://www.naukri.com/{slug}-jobs?k={keyword}&experience=3&jobAge=7"
+        return f"https://www.naukri.com/jobs?k={quote_plus(query)}&jobAge=7"
+
+    def _profile_queries(self) -> list[str]:
+        try:
+            plan = build_search_plan(self.workspace, max_queries=12)
+            queries = [item.keyword for item in plan if item.keyword]
+        except ValueError:
+            queries = []
+        return queries or list(DEFAULT_NAUKRI_QUERIES)
 
     def _navigate(self, url: str) -> None:
         escaped = self._as_applescript_string(url)

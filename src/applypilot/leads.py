@@ -11,16 +11,20 @@ import csv
 import json
 import logging
 import os
-import re
 import random
+import re
 import ssl
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
+from .career import load_career_profile
+from .config import load_preferences
 from .human import human_pause, human_scroll, BETWEEN_SEARCHES
 from .models import Lead
+from .search_plan import normalize
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +64,8 @@ class LeadHunter:
 
     def __init__(self, workspace: Path, hashtags: list[str] | None = None, max_searches: int = 8):
         self.workspace = workspace
+        self.profile = load_career_profile(workspace)
+        self.preferences = load_preferences(workspace)
         self.hashtags = hashtags or self._load_hashtags()
         self.max_searches = max_searches
         self._page = None
@@ -75,7 +81,14 @@ class LeadHunter:
                     return list(tags)
             except (json.JSONDecodeError, KeyError):
                 pass
-        return list(DEFAULT_HASHTAGS)
+
+        profile_queries: list[str] = []
+        for role in self.preferences.target_roles[:8]:
+            profile_queries.append(f"hiring {role}")
+            profile_queries.append(f"{role} jobs")
+        for skill in self.preferences.preferred_skills[:6]:
+            profile_queries.append(f"{skill} hiring")
+        return _dedupe(profile_queries)[:20] or list(DEFAULT_HASHTAGS)
 
     def run(self, page) -> list[Lead]:
         """Run the full lead hunting cycle. Expects a Playwright page already logged into LinkedIn."""
@@ -183,7 +196,7 @@ class LeadHunter:
     def _find_hiring_badges(self) -> list[Lead]:
         """Search for people with #Hiring badge on their profile."""
         self._page.goto(
-            "https://www.linkedin.com/search/results/people/?keywords=AI%20Engineer&openToHire=true",
+            f"https://www.linkedin.com/search/results/people/?keywords={quote(self._people_search_query())}&openToHire=true",
             wait_until="domcontentloaded",
             timeout=30000,
         )
@@ -227,11 +240,12 @@ class LeadHunter:
 
     def _draft_email(self, lead: Lead) -> str:
         """Use the configured AI provider to draft a personalized outreach email."""
+        profile_summary = self._profile_summary()
+        signature = self._contact_signature()
         prompt = (
             "Write a SHORT outreach email (5-6 lines max) for a job opportunity.\n\n"
-            "Candidate: Rishal V S, AI Engineer at Amazon (3 years exp)\n"
-            "Skills: GenAI, LLM, RAG, multi-agent systems, FastAPI, Python, AWS Bedrock\n"
-            "Currently: Building LLM systems processing 10,000+ daily executions\n\n"
+            "Candidate profile facts:\n"
+            f"{profile_summary}\n\n"
             f"Lead info:\n"
             f"- Person: {lead.name or 'Hiring Manager'}\n"
             f"- Their role: {lead.headline}\n"
@@ -239,8 +253,10 @@ class LeadHunter:
             f"- Email: {lead.email}\n\n"
             "Write a personalized, human email (not generic). Mention something specific "
             "from their post/role.\n"
-            'Format: Subject line first, then body. Keep it under 6 lines. '
-            'End with "Rishal V S | +91 97154 78366"\n'
+            "Format: Subject line first, then body. Keep it under 6 lines.\n"
+            f"End with this exact candidate contact line if available: {signature}\n"
+            "Do NOT invent employers, years of experience, phone numbers, degrees, salary, "
+            "metrics, or achievements that are not in the profile facts.\n"
             "Do NOT use bullet points. Write like a real person."
         )
         return self._ask_ai(prompt)
@@ -333,10 +349,27 @@ class LeadHunter:
         text_lower = text.lower()
         return any(signal in text_lower for signal in HIRING_SIGNALS)
 
-    @staticmethod
-    def _is_relevant_job(text: str) -> bool:
-        text_lower = text.lower()
-        return any(kw in text_lower for kw in RELEVANT_KEYWORDS)
+    def _is_relevant_job(self, text: str) -> bool:
+        text_normalized = normalize(text)
+        if not text_normalized:
+            return False
+
+        avoid_hits = [
+            term for term in self.preferences.avoid_keywords
+            if normalize(term) and normalize(term) in text_normalized
+        ]
+        if avoid_hits:
+            return False
+
+        terms = [
+            *self.preferences.target_roles,
+            *self.preferences.preferred_skills,
+            str(self.profile.get("target") or ""),
+            " ".join(str(item) for item in self.profile.get("skills") or []),
+        ]
+        if any(normalize(term) and normalize(term) in text_normalized for term in terms):
+            return True
+        return any(kw in text_normalized for kw in RELEVANT_KEYWORDS)
 
     @staticmethod
     def _extract_emails(text: str) -> list[str]:
@@ -399,3 +432,50 @@ class LeadHunter:
                 })
 
         logger.info("Saved %d leads to %s", len(leads), output_dir)
+
+    def _people_search_query(self) -> str:
+        role = next((item for item in self.preferences.target_roles if item), "")
+        if not role:
+            role = str(self.profile.get("target") or "").strip()
+        if role:
+            return f"{role} recruiter hiring"
+        return "recruiter hiring"
+
+    def _profile_summary(self) -> str:
+        profile = self.profile
+        skills = ", ".join(str(skill) for skill in profile.get("skills") or self.preferences.preferred_skills[:8])
+        lines = [
+            f"- Name: {profile.get('name') or 'Candidate'}",
+            f"- Target: {profile.get('target') or ', '.join(self.preferences.target_roles[:3]) or 'Not provided'}",
+            f"- Skills: {skills or 'Not provided'}",
+            f"- Location preference: {profile.get('location') or 'Not provided'}",
+            f"- Background: {profile.get('background') or 'Not provided'}",
+        ]
+        contact = self._contact_signature()
+        if contact:
+            lines.append(f"- Contact line: {contact}")
+        return "\n".join(lines)
+
+    def _contact_signature(self) -> str:
+        profile = self.profile
+        parts = [
+            str(profile.get("name") or "").strip() or "Candidate",
+            str(profile.get("email") or "").strip(),
+            str(profile.get("phone") or "").strip(),
+            str(profile.get("linkedin_url") or "").strip(),
+            str(profile.get("website") or "").strip(),
+        ]
+        return " | ".join(part for part in parts if part)
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        cleaned = " ".join(str(value or "").split())
+        key = cleaned.casefold()
+        if not cleaned or key in seen:
+            continue
+        seen.add(key)
+        output.append(cleaned)
+    return output

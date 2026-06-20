@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import ssl
 import textwrap
 import urllib.request
 from pathlib import Path
@@ -80,10 +79,7 @@ def _call_gemini(prompt: str) -> str:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    with urllib.request.urlopen(request, timeout=120, context=ctx) as response:
+    with urllib.request.urlopen(request, timeout=120) as response:
         raw = json.loads(response.read().decode("utf-8"))
     return raw["candidates"][0]["content"]["parts"][0]["text"]
 
@@ -108,10 +104,7 @@ def _call_groq(prompt: str) -> str:
         },
         method="POST",
     )
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    with urllib.request.urlopen(request, timeout=120, context=ctx) as response:
+    with urllib.request.urlopen(request, timeout=120) as response:
         raw = json.loads(response.read().decode("utf-8"))
     return raw["choices"][0]["message"]["content"]
 

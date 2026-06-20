@@ -69,12 +69,12 @@ def main(argv: list[str] | None = None) -> int:
     leads_cmd.add_argument("--max-searches", type=int, default=8, help="Max hashtag searches per run")
     leads_cmd.add_argument("--hashtags", nargs="*", help="Override hashtag list")
 
-    premium_cmd = sub.add_parser("premium", help="Run Premium Features — auto-connect viewers, InMail, Naukri status")
+    premium_cmd = sub.add_parser("premium", help="Run Premium discovery — draft outreach and check Naukri status")
     premium_cmd.add_argument("--max-inmails", type=int, default=10, help="Max InMails per day")
     premium_cmd.add_argument("--max-connects", type=int, default=20, help="Max connections per day")
 
     daily_cmd = sub.add_parser("daily", help="Run the working-agent replica flow")
-    daily_cmd.add_argument("--mode", choices=["all", "apply", "linkedin", "naukri", "leads", "premium"], default="all")
+    daily_cmd.add_argument("--mode", choices=["all", "apply", "linkedin", "naukri", "leads"], default="all")
     daily_cmd.add_argument("--legacy-dir", default="", help="Path to the working linkedin-agent folder")
     daily_cmd.add_argument("--use-legacy", action="store_true", help="Run scripts from the old working-agent folder")
     daily_cmd.add_argument("--dry-run", action="store_true", help="Print which scripts would run without applying")
@@ -263,10 +263,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         pf = PremiumFeatures(workspace, max_inmails=args.max_inmails, max_connects=args.max_connects)
         summary = pf.run(page)
-        print(f"Premium features complete:")
+        print("Premium discovery complete (draft-only):")
         print(f"  Profile viewers found: {summary['profile_viewers_found']}")
-        print(f"  Connections sent: {summary['connections_sent']}")
-        print(f"  InMails sent: {summary['inmails_sent']}")
+        print(f"  Connection drafts: {summary.get('connection_drafts', 0)}")
+        print(f"  InMail drafts: {summary.get('inmail_drafts', 0)}")
+        print("  Connections sent: 0 (manual review required)")
+        print("  InMails sent: 0 (manual review required)")
         print(f"  Naukri activity: {summary['naukri_activity']}")
         page.context.browser.close()
         return 0
@@ -294,23 +296,6 @@ def main(argv: list[str] | None = None) -> int:
                 f"leads={totals['leads']}"
             )
 
-        # Run leads + premium as part of the daily "all" cycle
-        if args.mode in ("all", "leads", "premium") and not args.dry_run and not args.use_legacy:
-            page = _get_playwright_page(workspace)
-            if page is not None:
-                if args.mode in ("all", "leads"):
-                    from .leads import LeadHunter
-                    hunter = LeadHunter(workspace)
-                    leads_found = hunter.run(page)
-                    print(f"Leads: {len(leads_found)} found ({sum(1 for l in leads_found if l.email)} with email)")
-                if args.mode in ("all", "premium"):
-                    from .premium import PremiumFeatures
-                    pf = PremiumFeatures(workspace)
-                    summary = pf.run(page)
-                    print(f"Premium: connects={summary['connections_sent']}, inmails={summary['inmails_sent']}, naukri={summary['naukri_activity']}")
-                page.context.browser.close()
-            else:
-                print("Skipping leads/premium: Playwright not available.")
         return 0
 
     if args.command == "sync-legacy":

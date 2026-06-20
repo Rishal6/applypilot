@@ -154,7 +154,10 @@ def click_apply():
 
 
 def handle_chatbot():
-    """Handle chatbot questions after clicking Apply"""
+    """Handle chatbot questions after clicking Apply.
+
+    Stops for manual review when Naukri asks an unconfigured question.
+    """
     for attempt in range(8):
         human_pause(2, 4)
 
@@ -189,13 +192,14 @@ def handle_chatbot():
                 break
 
         if answer:
+            answer_json = json.dumps(answer)
             # Click the chip/button with that answer
             clicked = js_file(f"""
             (function() {{
                 var chips = document.querySelectorAll('.chatbot_Chip, .chipItem, [class*=Chip], [class*=chip]');
                 for (var i = 0; i < chips.length; i++) {{
                     var text = chips[i].textContent.trim();
-                    if (text === '{answer}') {{
+                    if (text === {answer_json}) {{
                         chips[i].click();
                         return 'clicked:' + text;
                     }}
@@ -204,7 +208,7 @@ def handle_chatbot():
                 var btns = document.querySelectorAll('button');
                 for (var i = 0; i < btns.length; i++) {{
                     var text = btns[i].textContent.trim();
-                    if (text === '{answer}') {{
+                    if (text === {answer_json}) {{
                         btns[i].click();
                         return 'clicked_btn:' + text;
                     }}
@@ -214,25 +218,8 @@ def handle_chatbot():
             """)
             log(f"    Chatbot: '{chatbot_lower[:50]}' → answered '{answer}' ({clicked})")
         else:
-            # Unknown question — try clicking "Save" or first available option
-            clicked = js_file("""
-            (function() {
-                // Try Save button
-                var btns = document.querySelectorAll('button');
-                for (var i = 0; i < btns.length; i++) {
-                    var text = btns[i].textContent.trim();
-                    if (text === 'Save' || text === 'Submit' || text === 'Done') {
-                        btns[i].click();
-                        return 'clicked:' + text;
-                    }
-                }
-                // Try first chip
-                var chips = document.querySelectorAll('.chatbot_Chip, .chipItem');
-                if (chips.length > 0) { chips[0].click(); return 'clicked_first_chip'; }
-                return 'nothing';
-            })()
-            """)
-            log(f"    Chatbot: unknown question → {clicked}")
+            log(f"    Chatbot: unknown question, stopping for manual review: {chatbot_lower[:80]}")
+            return "needs_review"
 
         # Click skills chips if they appear (click all clickable ones)
         js_file("""
@@ -283,10 +270,7 @@ def apply_to_job(job_url, job_title):
         return True
     else:
         log(f"  Apply flow ended: {result}")
-        # Try clicking Save/Submit one more time
-        js('var btns = document.querySelectorAll("button"); for(var i=0;i<btns.length;i++){var t=btns[i].textContent.trim(); if(t==="Save"||t==="Submit"||t==="Done"){btns[i].click();break;}}')
-        human_pause(2, 3)
-        return True  # Assume it went through
+        return False
 
 
 def main():
