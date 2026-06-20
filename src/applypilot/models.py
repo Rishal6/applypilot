@@ -10,6 +10,49 @@ def utc_now() -> str:
 
 
 @dataclass(slots=True)
+class Lead:
+    name: str
+    headline: str = ""
+    email: str = ""
+    phone: str = ""
+    profile_url: str = ""
+    source: str = "hashtag"
+    draft_email: str = ""
+    post_snippet: str = ""
+    found_at: str = field(default_factory=utc_now)
+    status: str = "pending"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "headline": self.headline,
+            "email": self.email,
+            "phone": self.phone,
+            "profile_url": self.profile_url,
+            "source": self.source,
+            "draft_email": self.draft_email,
+            "post_snippet": self.post_snippet,
+            "found_at": self.found_at,
+            "status": self.status,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "Lead":
+        return cls(
+            name=str(raw.get("name") or ""),
+            headline=str(raw.get("headline") or ""),
+            email=str(raw.get("email") or ""),
+            phone=str(raw.get("phone") or ""),
+            profile_url=str(raw.get("profile_url") or ""),
+            source=str(raw.get("source") or "hashtag"),
+            draft_email=str(raw.get("draft_email") or ""),
+            post_snippet=str(raw.get("post_snippet") or ""),
+            found_at=str(raw.get("found_at") or utc_now()),
+            status=str(raw.get("status") or "pending"),
+        )
+
+
+@dataclass(slots=True)
 class Job:
     id: str
     title: str

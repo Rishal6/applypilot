@@ -36,5 +36,9 @@ def get_application_connector(name: str, workspace):
         from .linkedin_browser import LinkedInBrowserConnector
 
         return LinkedInBrowserConnector(workspace)
+    if normalized in {"naukri-browser", "naukri"}:
+        from .naukri_browser import NaukriBrowserConnector
+
+        return NaukriBrowserConnector(workspace)
     raise SystemExit(f"Unknown application connector: {name}")
 

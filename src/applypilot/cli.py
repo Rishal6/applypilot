@@ -53,19 +53,28 @@ def main(argv: list[str] | None = None) -> int:
     policy_cmd.add_argument("--min-score", type=int)
     policy_cmd.add_argument("--allow-non-easy-apply", action="store_true")
 
-    search_cmd = sub.add_parser("search", help="Search LinkedIn for jobs and save to store")
+    search_cmd = sub.add_parser("search", help="Search LinkedIn or Naukri for jobs and save to store")
     search_cmd.add_argument("--browser-profile", default="", help="Reserved for packaged builds; active Chrome ignores this")
+    search_cmd.add_argument("--source", default="linkedin", choices=["linkedin", "naukri"], help="Job board to search")
 
     run_cmd = sub.add_parser("run", help="Run the unattended local desktop agent")
     run_cmd.add_argument("--provider", default="rules")
-    run_cmd.add_argument("--connector", default="none", help="none or linkedin-browser")
+    run_cmd.add_argument("--connector", default="none", help="none, linkedin-browser, or naukri-browser")
     run_cmd.add_argument("--once", action="store_true", help="Run one cycle and exit")
     run_cmd.add_argument("--interval-minutes", type=float, default=60)
     run_cmd.add_argument("--max-cycles", type=int, default=0)
     run_cmd.add_argument("--search", action="store_true", help="Search LinkedIn for jobs before scoring+applying")
 
+    leads_cmd = sub.add_parser("leads", help="Run the Lead Hunter — search hashtags, extract contacts, draft emails")
+    leads_cmd.add_argument("--max-searches", type=int, default=8, help="Max hashtag searches per run")
+    leads_cmd.add_argument("--hashtags", nargs="*", help="Override hashtag list")
+
+    premium_cmd = sub.add_parser("premium", help="Run Premium Features — auto-connect viewers, InMail, Naukri status")
+    premium_cmd.add_argument("--max-inmails", type=int, default=10, help="Max InMails per day")
+    premium_cmd.add_argument("--max-connects", type=int, default=20, help="Max connections per day")
+
     daily_cmd = sub.add_parser("daily", help="Run the working-agent replica flow")
-    daily_cmd.add_argument("--mode", choices=["all", "apply", "linkedin", "naukri", "leads"], default="all")
+    daily_cmd.add_argument("--mode", choices=["all", "apply", "linkedin", "naukri", "leads", "premium"], default="all")
     daily_cmd.add_argument("--legacy-dir", default="", help="Path to the working linkedin-agent folder")
     daily_cmd.add_argument("--use-legacy", action="store_true", help="Run scripts from the old working-agent folder")
     daily_cmd.add_argument("--dry-run", action="store_true", help="Print which scripts would run without applying")
@@ -111,6 +120,11 @@ def main(argv: list[str] | None = None) -> int:
     me_cmd.add_argument("--endpoint", default="")
     me_cmd.add_argument("--token", default="", help="Defaults to APPLYPILOT_DEVICE_TOKEN or saved auth")
 
+    resume_cmd = sub.add_parser("resume", help="Generate a resume PDF (or Markdown if fpdf2 not installed)")
+    resume_cmd.add_argument("--job-url", default="", help="URL of a job to tailor the resume for")
+    resume_cmd.add_argument("--job-id", default="", help="ID of a stored job to tailor for")
+    resume_cmd.add_argument("--out", default="", help="Output file path")
+
     args = parser.parse_args(argv)
     workspace = workspace_path(args.workspace)
     store = Store(workspace)
@@ -135,9 +149,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "search":
         write_default_workspace(workspace)
-        profile_path = Path(args.browser_profile).expanduser() if args.browser_profile else None
-        searcher = LinkedInSearcher(workspace, browser_profile_path=profile_path)
-        jobs = searcher.search()
+        if args.source == "naukri":
+            from .connectors.naukri_search import NaukriSearcher
+
+            searcher_naukri = NaukriSearcher(workspace)
+            jobs = searcher_naukri.search()
+        else:
+            profile_path = Path(args.browser_profile).expanduser() if args.browser_profile else None
+            searcher = LinkedInSearcher(workspace, browser_profile_path=profile_path)
+            jobs = searcher.search()
         if not jobs:
             print("No jobs found.")
             return 0
@@ -215,6 +235,42 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "leads":
+        from .leads import LeadHunter
+
+        write_default_workspace(workspace)
+        page = _get_playwright_page(workspace)
+        if page is None:
+            print("Could not launch browser. Ensure Playwright is installed (pip install playwright && playwright install chromium).")
+            return 1
+        hunter = LeadHunter(workspace, hashtags=args.hashtags, max_searches=args.max_searches)
+        leads = hunter.run(page)
+        print(f"Lead Hunt complete: {len(leads)} leads found.")
+        print(f"  With email: {sum(1 for l in leads if l.email)}")
+        print(f"  With profile: {sum(1 for l in leads if l.profile_url)}")
+        print(f"  Drafts written: {sum(1 for l in leads if l.draft_email)}")
+        print(f"  Saved to: {workspace / 'leads'}")
+        page.context.browser.close()
+        return 0
+
+    if args.command == "premium":
+        from .premium import PremiumFeatures
+
+        write_default_workspace(workspace)
+        page = _get_playwright_page(workspace)
+        if page is None:
+            print("Could not launch browser. Ensure Playwright is installed (pip install playwright && playwright install chromium).")
+            return 1
+        pf = PremiumFeatures(workspace, max_inmails=args.max_inmails, max_connects=args.max_connects)
+        summary = pf.run(page)
+        print(f"Premium features complete:")
+        print(f"  Profile viewers found: {summary['profile_viewers_found']}")
+        print(f"  Connections sent: {summary['connections_sent']}")
+        print(f"  InMails sent: {summary['inmails_sent']}")
+        print(f"  Naukri activity: {summary['naukri_activity']}")
+        page.context.browser.close()
+        return 0
+
     if args.command == "daily":
         write_default_workspace(workspace)
         if args.use_legacy:
@@ -237,6 +293,24 @@ def main(argv: list[str] | None = None) -> int:
                 f"naukri={totals['naukri_applied']}, "
                 f"leads={totals['leads']}"
             )
+
+        # Run leads + premium as part of the daily "all" cycle
+        if args.mode in ("all", "leads", "premium") and not args.dry_run and not args.use_legacy:
+            page = _get_playwright_page(workspace)
+            if page is not None:
+                if args.mode in ("all", "leads"):
+                    from .leads import LeadHunter
+                    hunter = LeadHunter(workspace)
+                    leads_found = hunter.run(page)
+                    print(f"Leads: {len(leads_found)} found ({sum(1 for l in leads_found if l.email)} with email)")
+                if args.mode in ("all", "premium"):
+                    from .premium import PremiumFeatures
+                    pf = PremiumFeatures(workspace)
+                    summary = pf.run(page)
+                    print(f"Premium: connects={summary['connections_sent']}, inmails={summary['inmails_sent']}, naukri={summary['naukri_activity']}")
+                page.context.browser.close()
+            else:
+                print("Skipping leads/premium: Playwright not available.")
         return 0
 
     if args.command == "sync-legacy":
@@ -354,6 +428,41 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(fetch_me(endpoint, token), indent=2))
         return 0
 
+    if args.command == "resume":
+        from .resume_builder import ResumeBuilder as RB, load_profile
+
+        write_default_workspace(workspace)
+        profile = load_profile(workspace)
+        if not profile.get("name") or profile.get("name") == "Candidate":
+            if not profile.get("raw_text"):
+                print(
+                    "No resume data found. Create resume_data.json or profile.md "
+                    f"in {workspace}"
+                )
+                return 1
+
+        # Find job to tailor for
+        target_job: Job | None = None
+        if args.job_id:
+            jobs = {j.id: j for j in store.load_jobs()}
+            target_job = jobs.get(args.job_id)
+            if not target_job:
+                print(f"Job ID '{args.job_id}' not found in store.")
+                return 1
+        elif args.job_url:
+            # Look up by URL or create a minimal Job for tailoring
+            jobs = store.load_jobs()
+            target_job = next((j for j in jobs if j.url == args.job_url), None)
+            if not target_job:
+                target_job = Job(id=args.job_url, title="", company="", url=args.job_url)
+                print(f"Job URL not in store; tailoring with minimal info.")
+
+        output = Path(args.out).expanduser() if args.out else None
+        builder = RB()
+        result_path = builder.build_resume(profile, job=target_job, output_path=output)
+        print(f"Resume generated: {result_path}")
+        return 0
+
     return 1
 
 
@@ -463,6 +572,27 @@ def print_status(workspace: Path, store: Store, legacy_dir: Path) -> None:
         print(f"Legacy leads found: {totals['leads']}")
     except SystemExit as exc:
         print(f"Working agent: unavailable ({exc})")
+
+
+def _get_playwright_page(workspace: Path):
+    """Launch Playwright Chromium with a persistent profile so LinkedIn stays logged in."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return None
+
+    user_data_dir = workspace / "browser_profile"
+    user_data_dir.mkdir(parents=True, exist_ok=True)
+
+    pw = sync_playwright().start()
+    browser = pw.chromium.launch_persistent_context(
+        str(user_data_dir),
+        headless=False,
+        args=["--disable-blink-features=AutomationControlled"],
+        viewport={"width": 1280, "height": 900},
+    )
+    page = browser.pages[0] if browser.pages else browser.new_page()
+    return page
 
 
 if __name__ == "__main__":
