@@ -64,7 +64,7 @@ def create_app(db_path: str | Path | None = None, web_dir: str | Path | None = N
 
     @app.get("/api/v1/health")
     def health() -> dict[str, Any]:
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "version": "0.1.0", **deploy_metadata()}
 
     @app.post("/api/v1/customers")
     async def create_customer(request: Request) -> dict[str, Any]:
@@ -271,3 +271,25 @@ def bearer_token(authorization: str) -> str:
     if authorization.startswith(prefix):
         return authorization[len(prefix):].strip()
     return ""
+
+
+def deploy_metadata() -> dict[str, str]:
+    """Best-effort metadata for Render/GitHub deploy visibility."""
+    commit = first_env("RENDER_GIT_COMMIT", "RENDER_COMMIT", "GIT_COMMIT", "SOURCE_VERSION")
+    branch = first_env("RENDER_GIT_BRANCH", "RENDER_BRANCH", "GIT_BRANCH")
+    service = first_env("RENDER_SERVICE_NAME", "RENDER_SERVICE_ID")
+    metadata = {
+        "commit": short_commit(commit),
+        "commit_full": commit,
+        "branch": branch,
+        "service": service,
+    }
+    return {key: value for key, value in metadata.items() if value}
+
+
+def first_env(*names: str) -> str:
+    return next((os.environ[name].strip() for name in names if os.environ.get(name, "").strip()), "")
+
+
+def short_commit(value: str) -> str:
+    return value[:7] if len(value) >= 7 else value
